@@ -50,11 +50,13 @@ Despite the fantastic progress, the current engine works as a "Contained Prototy
 13. Number 8: You add a blade and a shield
 14. Number 9: You equip a bow
 15. Number 0: You display the wings
+16. For the letter 'E', you add an effect; there is a list of effects in the code.
 
-16.	![Texto Alternativo](x64/Debug/foto1.png)
-17.	![Texto Alternativo](x64/Debug/foto2.png)
-18.	![Texto Alternativo](x64/Debug/foto3.png)
-19.	![Texto Alternativo](x64/Debug/foto4.png)
-20.	![Texto Alternativo](x64/Debug/foto5.png)
-21.	![Texto Alternativo](x64/Debug/foto6.png)
+17.	![Texto Alternativo](x64/Debug/foto1.png)
+18.	![Texto Alternativo](x64/Debug/foto2.png)
+19.	![Texto Alternativo](x64/Debug/foto3.png)
+20.	![Texto Alternativo](x64/Debug/foto4.png)
+21.	![Texto Alternativo](x64/Debug/foto5.png)
+22.	![Texto Alternativo](x64/Debug/foto6.png)
+23.	![Texto Alternativo](x64/Debug/foto7.png)
 
