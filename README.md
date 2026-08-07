@@ -38,3 +38,11 @@ Despite the fantastic progress, the current engine works as a "Contained Prototy
 2.	Entities in a Single File: The Conquer.cpp file concentrates all the rules for the player and monsters in the update loop. This needs to evolve into an ECS (Entity Component System) architecture in separate .h and .cpp files.
 3.	Pathfinding Real (A Star): * Today the player walks mathematically "bypassing walls". It is necessary to incorporate the Z-Buffer and the forbidden blocks from the .DMap file into the logic of the mouse.
 4.	Client-Server Integration: Armor IDs and monster spawn rates are hardcoded . The next natural step is injecting Network.dll .
+
+5.	![Texto Alternativo](x64/Debug/foto1.png)
+6.	![Texto Alternativo](x64/Debug/foto2.png)
+7.	![Texto Alternativo](x64/Debug/foto3.png)
+8.	![Texto Alternativo](x64/Debug/foto4.png)
+9.	![Texto Alternativo](x64/Debug/foto5.png)
+10.	![Texto Alternativo](x64/Debug/foto6.png)
+
