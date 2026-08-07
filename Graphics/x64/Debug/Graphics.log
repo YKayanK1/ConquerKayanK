@@ -1,0 +1,152 @@
+﻿  pch.cpp
+  Graphics.cpp
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(27,21): warning C4251: 'Resource::EffectConfig::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::EffectConfig'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(37,33): warning C4251: 'Resource::EffectConfig::parts': 'std::vector<Resource::EffectPart,std::allocator<Resource::EffectPart>>' needs to have dll-interface to be used by clients of 'Resource::EffectConfig'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::EffectPart,std::allocator<Resource::EffectPart>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(50,32): warning C4251: 'Resource::ArmorConfig::parts': 'std::vector<Resource::ArmorPart,std::allocator<Resource::ArmorPart>>' needs to have dll-interface to be used by clients of 'Resource::ArmorConfig'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::ArmorPart,std::allocator<Resource::ArmorPart>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(58,27): warning C4251: 'Resource::PtclFrame::positions': 'std::vector<Resource::Vec3,std::allocator<Resource::Vec3>>' needs to have dll-interface to be used by clients of 'Resource::PtclFrame'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::Vec3,std::allocator<Resource::Vec3>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(59,28): warning C4251: 'Resource::PtclFrame::ages': 'std::vector<float,std::allocator<float>>' needs to have dll-interface to be used by clients of 'Resource::PtclFrame'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<float,std::allocator<float>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(60,28): warning C4251: 'Resource::PtclFrame::sizes': 'std::vector<float,std::allocator<float>>' needs to have dll-interface to be used by clients of 'Resource::PtclFrame'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<float,std::allocator<float>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(66,21): warning C4251: 'Resource::C3Ptcl::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::C3Ptcl'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(67,21): warning C4251: 'Resource::C3Ptcl::textureName': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::C3Ptcl'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(75,32): warning C4251: 'Resource::C3Ptcl::frames': 'std::vector<Resource::PtclFrame,std::allocator<Resource::PtclFrame>>' needs to have dll-interface to be used by clients of 'Resource::C3Ptcl'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::PtclFrame,std::allocator<Resource::PtclFrame>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(78,74): warning C4251: 'Resource::C3KeyFrame::boneMatrices': 'std::vector<Resource::Matrix4x4,std::allocator<Resource::Matrix4x4>>' needs to have dll-interface to be used by clients of 'Resource::C3KeyFrame'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::Matrix4x4,std::allocator<Resource::Matrix4x4>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(81,33): warning C4251: 'Resource::C3Motion::keyframes': 'std::vector<Resource::C3KeyFrame,std::allocator<Resource::C3KeyFrame>>' needs to have dll-interface to be used by clients of 'Resource::C3Motion'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::C3KeyFrame,std::allocator<Resource::C3KeyFrame>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(82,28): warning C4251: 'Resource::C3Motion::morphs': 'std::vector<float,std::allocator<float>>' needs to have dll-interface to be used by clients of 'Resource::C3Motion'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<float,std::allocator<float>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(91,21): warning C4251: 'Resource::C3Phy::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::C3Phy'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(91,39): warning C4251: 'Resource::C3Phy::textureName': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::C3Phy'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(93,32): warning C4251: 'Resource::C3Phy::vertices': 'std::vector<Resource::PhyVertex,std::allocator<Resource::PhyVertex>>' needs to have dll-interface to be used by clients of 'Resource::C3Phy'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::PhyVertex,std::allocator<Resource::PhyVertex>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(93,64): warning C4251: 'Resource::C3Phy::indices': 'std::vector<uint16_t,std::allocator<uint16_t>>' needs to have dll-interface to be used by clients of 'Resource::C3Phy'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<uint16_t,std::allocator<uint16_t>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(98,28): warning C4251: 'Resource::C3Model::phys': 'std::vector<Resource::C3Phy,std::allocator<Resource::C3Phy>>' needs to have dll-interface to be used by clients of 'Resource::C3Model'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::C3Phy,std::allocator<Resource::C3Phy>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(99,31): warning C4251: 'Resource::C3Model::motions': 'std::vector<Resource::C3Motion,std::allocator<Resource::C3Motion>>' needs to have dll-interface to be used by clients of 'Resource::C3Model'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::C3Motion,std::allocator<Resource::C3Motion>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(100,29): warning C4251: 'Resource::C3Model::ptcls': 'std::vector<Resource::C3Ptcl,std::allocator<Resource::C3Ptcl>>' needs to have dll-interface to be used by clients of 'Resource::C3Model'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::C3Ptcl,std::allocator<Resource::C3Ptcl>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(110,21): warning C4251: 'Resource::MapTerrainObject::aniPath': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MapTerrainObject'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(111,21): warning C4251: 'Resource::MapTerrainObject::aniName': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MapTerrainObject'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(120,21): warning C4251: 'Resource::DMapData::puzzleFile': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::DMapData'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(121,30): warning C4251: 'Resource::DMapData::cells': 'std::vector<Resource::MapCell,std::allocator<Resource::MapCell>>' needs to have dll-interface to be used by clients of 'Resource::DMapData'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::MapCell,std::allocator<Resource::MapCell>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(122,32): warning C4251: 'Resource::DMapData::portals': 'std::vector<Resource::MapPortal,std::allocator<Resource::MapPortal>>' needs to have dll-interface to be used by clients of 'Resource::DMapData'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::MapPortal,std::allocator<Resource::MapPortal>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(123,39): warning C4251: 'Resource::DMapData::terrainObjects': 'std::vector<Resource::MapTerrainObject,std::allocator<Resource::MapTerrainObject>>' needs to have dll-interface to be used by clients of 'Resource::DMapData'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::MapTerrainObject,std::allocator<Resource::MapTerrainObject>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(128,21): warning C4251: 'Resource::PulData::puzzleType': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(128,33): warning C4251: 'Resource::PulData::aniFile': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(130,30): warning C4251: 'Resource::PulData::tiles': 'std::vector<int16_t,std::allocator<int16_t>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<int16_t,std::allocator<int16_t>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(134,21): warning C4251: 'Resource::GameMapRecord::dmapPath': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::GameMapRecord'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Graphics\Graphics.cpp(191,79): warning C4267: '=': conversion from 'size_t' to 'UINT', possible loss of data
+  (compiling source file '/Graphics.cpp')
+  
+     Creating library D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Graphics.lib and object D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Graphics.exp
+  Graphics.vcxproj -> D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Graphics.dll

@@ -327,7 +327,7 @@ public:
         ChangeWeapon(0, 0);
         ChangeArmor(Game::ModelType::SmallFemale, m_player.armorId);
 
-        ChangeWing("_p_24_wing1_open110");
+        
 
         auto monsterTexData = m_resource.GetFileData("c3\\texture\\104000000.dds");
         if (!monsterTexData.empty()) {
@@ -667,7 +667,6 @@ public:
     }
 
     void Update(float deltaTime) {
-        // [NOVO] Checagem de Redimensionamento Inteligente (Widescreen Automático!)
         RECT rect;
         GetClientRect(m_window.m_hWnd, &rect);
         int currentWidth = rect.right - rect.left;
@@ -675,7 +674,7 @@ public:
         if (currentWidth > 0 && currentHeight > 0 && (currentWidth != m_window.m_width || currentHeight != m_window.m_height)) {
             m_window.m_width = currentWidth;
             m_window.m_height = currentHeight;
-            m_renderer.Resize(currentWidth, currentHeight); // Avisa a GPU para recriar a tela!
+            m_renderer.Resize(currentWidth, currentHeight);
         }
 
         m_frameCount++; m_fpsTimer += deltaTime;
@@ -713,17 +712,17 @@ public:
             if (curr7 && !s_prev7) ChangeWeapon(410330, 410330);
             s_prev7 = curr7;
 
-            static bool s_prev8 = false; bool curr8 = (GetAsyncKeyState('8') & 0x8000);
-            if (curr8 && !s_prev8) ChangeWeapon(480330, 410330);
-            s_prev8 = curr8;
-
-            static bool s_prev9 = false; bool curr9 = (GetAsyncKeyState('9') & 0x8000);
+            static bool s_prev9 = false; bool curr9 = (GetAsyncKeyState('8') & 0x8000);
             if (curr9 && !s_prev9) ChangeWeapon(410330, 900090);
             s_prev9 = curr9;
 
-            static bool s_prev0 = false; bool curr0 = (GetAsyncKeyState('0') & 0x8000);
+            static bool s_prev0 = false; bool curr0 = (GetAsyncKeyState('9') & 0x8000);
             if (curr0 && !s_prev0) ChangeWeapon(500320, 0);
             s_prev0 = curr0;
+
+            static bool s_prev8 = false; bool curr8 = (GetAsyncKeyState('0') & 0x8000);
+            if (curr8 && !s_prev8) ChangeWing("_p_24_wing1_open110");
+            s_prev8 = curr8;
 
             static bool s_prevE = false;
             bool currentE = (GetAsyncKeyState('E') & 0x8000) != 0;
