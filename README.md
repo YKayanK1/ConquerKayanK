@@ -39,10 +39,22 @@ Despite the fantastic progress, the current engine works as a "Contained Prototy
 3.	Pathfinding Real (A Star): * Today the player walks mathematically "bypassing walls". It is necessary to incorporate the Z-Buffer and the forbidden blocks from the .DMap file into the logic of the mouse.
 4.	Client-Server Integration: Armor IDs and monster spawn rates are hardcoded . The next natural step is injecting Network.dll .
 
-5.	![Texto Alternativo](x64/Debug/foto1.png)
-6.	![Texto Alternativo](x64/Debug/foto2.png)
-7.	![Texto Alternativo](x64/Debug/foto3.png)
-8.	![Texto Alternativo](x64/Debug/foto4.png)
-9.	![Texto Alternativo](x64/Debug/foto5.png)
-10.	![Texto Alternativo](x64/Debug/foto6.png)
+5. Here are the shortcuts:
+6. Number 1: You turn into a small woman
+7. Number 2: You turn into a large woman
+8. Number 3: You turn into a small man
+9. Number 4: You turn into a large man
+10. Number 5: You remove all his weapons
+11. Number 6: You add a level 130 blade
+12. Number 7: You add level 130 dual blades
+13. Number 8: You add a blade and a shield
+14. Number 9: You equip a bow
+15. Number 0: You display the wings
+
+16.	![Texto Alternativo](x64/Debug/foto1.png)
+17.	![Texto Alternativo](x64/Debug/foto2.png)
+18.	![Texto Alternativo](x64/Debug/foto3.png)
+19.	![Texto Alternativo](x64/Debug/foto4.png)
+20.	![Texto Alternativo](x64/Debug/foto5.png)
+21.	![Texto Alternativo](x64/Debug/foto6.png)
 
