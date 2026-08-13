@@ -1,43 +1,4 @@
-[[Conquer KayanK: Engine Architecture Report (Phase 1 - Baseline Rendering)
-System Overview
-Conquer KayanK is a custom engine (written in pure C++ with Win32 API) designed to recreate the 2.5D isometric environment of the classic MMORPG Conquer Online . The engine overcomes the software limitations of the original game by using hardware-accelerated rendering via DirectX 11 .
-The current architecture is strictly monolithic for prototyping reasons, but it already separates responsibilities for memory loading (Resource), window logic (Window), and rendering abstraction (Graphics).
-1. The Graphics Pipeline (Graphics & DirectX 11)
-We replaced the old CPU tests with a genuine D3D11 pipeline. The engine not only "plots pixels," but also has programmed Shaders that handle depth, color blending, and geometric projections.
-Current Features:
-●	Smart Viewport: Automatic widescreen mode (the screen never flattens, it displays more of the map area when stretched).
-●	Multiple Z-Buffers ( depthState ):
-○	Z-Write On: Used for character meshes, doors, and objects that cannot be visually traversed.
-○	Z-Write Off (Z-Read Only): Created specifically for particles, smoke, and magic, ensuring that the transparent glow obeys 3D space, but without "cutting" invisible objects that are behind it.
-●	Dynamic Blending:
-○	Alpha Blend (Default): For normal textures and 2D sprites.
-○	Additive Blend (Pure Light): Advanced blend for the core of abilities, illuminating the background without making it opaque.
-●	DrawMesh3D & DrawParticles: An abstraction where C++ passes matrices (worlds), rotations, and scales via constant buffers to the graphics card for high-performance operation.
-2. The Resource Engine (Parser of .C3 and .DMap files)
-m_resource component performs reverse engineering on TQ Digital's proprietary native formats.
-Current Features:
-●	WDF Unpacker: A system capable of reading and extracting .dds , .c3 , and .ani files directly from the giant binary files (.WDF) of the original game, mounting the textures directly into VRAM.
-●	Isometric System (.DMAP / .PUL): Converts the isometric mathematical mesh of classic maps into exact 2D positions, handling floor displacements dynamically.
-●	3D Mesh Import ( C3Phy ): Reads PHY blocks (TQ Digital's proprietary format containing vertices, normals, and the skeleton).
-●	Importing Animations ( C3Motion ): Reading the temporal track. Includes converting Quaternions to rotation matrices (Bone Interpolation).
-●	Effects and Spells Engine ( 3DEffect.ini / C3Ptcl ): Reads skill script files, extracts particle tracks from .C3 (Ptcl), and converts simple polygons into glow matrices. The engine is capable of permanently rotating a corrupted model in Pitch/Yaw/Roll before presenting it.
-3. The Main Loop (The "Brain" of Conquer.cpp)
-WinMain dictates the universe's timeline, rigidly separating Updates from Rendering .
-What Has Already Been Implemented:
-●	"Delta Time" control: Ensures the character runs at the same speed regardless of whether the PC is running at 20 FPS or 3000 FPS.
-●	Pseudo-3D Physics:
-○	The screen blends 2D and 3D mathematics simultaneously.
-○	The jumps simulate gravity acceleration using parabolic equations ( m_player.jumpZ ) on the 2D sprites of the ground.
-●	Modular Equipment System (Armor, Weapons and Wings):
-○	"Attachment Bones" concept : Where individual parts (a sword, a glow, or a wing) seek out a specific bone in the central body (right hand, back) and inherit its rotation/animation matrix during rendering.
-●	Combat Loop and Cooldowns: The raw logic behind attacking, taking real damage, "fluctuating" damage numbers ( isDamageNumber ), waiting for the safety lock (Cooldown), and applying the "Hit" to monsters, gradually causing their death and "ghostly disappearance."
-●	Controlled Zoom System and Camera Pathfinding: Seamless transformation for the mouse ( coordSystem.ScreenToMap ) considering zoom offsets.
-4. Limitations and Challenges for Phase 2
-Despite the fantastic progress, the current engine works as a "Contained Prototype". To scale into a true MMO, some barriers need to be overcome:
-1.	CPU Skinning Bottleneck: Currently, bone interpolation (LerpMatrix) is running on the CPU within GetInterpolatedBone . To render a thousand players in Twin City, this responsibility will need to be transferred to an HLSL Vertex Shader (GPU Skinning).
-2.	Entities in a Single File: The Conquer.cpp file concentrates all the rules for the player and monsters in the update loop. This needs to evolve into an ECS (Entity Component System) architecture in separate .h and .cpp files.
-3.	Pathfinding Real (A Star): * Today the player walks mathematically "bypassing walls". It is necessary to incorporate the Z-Buffer and the forbidden blocks from the .DMap file into the logic of the mouse.
-4.	Client-Server Integration: Armor IDs and monster spawn rates are hardcoded . The next natural step is injecting Network.dll .
+Conquer KayanK - Diário de Desenvolvimento (Status Fase 1)Visão GeralA KayanK é uma engine customizada desenvolvida em C++ (Win32) e DirectX 11. O objetivo é contornar o client legado da TQ Digital e renderizar o mundo isométrico do Conquer Online nativamente usando aceleração por hardware.Atualmente, o projeto está numa fase de prototipagem rápida. O código principal está um pouco monolítico no Conquer.cpp, mas já começamos a isolar as responsabilidades de Window, Graphics e Resource.1. Renderização (Graphics & D3D11)A engine abandonou o GDI/renderização de CPU e já opera um pipeline 3D real usando shaders (HLSL).Widescreen Nativo: O resize da janela está interceptando o evento do Windows e reconstruindo os buffers do DX11 em tempo real. A tela revela mais área do mapa ao invés de apenas achatar/esticar a imagem.Tratamento de Z-Buffer:Z-Write On: Usado no cenário e na malha base dos personagens para lidar com a profundidade isométrica.Z-Write Off (Z-Read Only): Implementado especificamente para as partículas e asas. Isso resolveu o problema de "recorte" onde objetos transparentes apagavam o que estava atrás deles.Blending: Suporte a Alpha Blend comum e Additive Blend (usado para o brilho do núcleo das partículas e magias não escurecer o fundo).2. Resource Manager (Desempacotador e Parser)O módulo de recursos faz a leitura direta dos arquivos binários do jogo original.Leitor de .WDF: Consegue montar o índice do pacote, buscar o hash e carregar os arquivos (DDS, C3, ANI) direto pra memória sem precisar extrair pro disco.Mapas (.DMAP / .PUL): Faz o parsing do grid matemático do jogo e traduz as coordenadas lógicas para a tela 2.5D.Malhas e Animações (.C3 / .MOT): Extrai vértices, normais, pesos e converte a trilha de quaternions da animação original para Matrizes de Rotação.Correção de Efeitos (3DEffect.ini / C3Ptcl): A engine já lê os scripts de magia. Implementamos uma correção no momento do load para aplicar um "Pitch" de 90 graus nas partículas (como as asas), resolvendo o problema dos modelos originais virem deitados no eixo Z.3. Gameplay Loop (Conquer.cpp)O loop principal controla o fluxo de dados entre o parser e o renderizador.Delta Time: FPS independente. A movimentação e os timers (pulo, animação) usam a diferença de tempo real, então o jogo roda na mesma velocidade a 60 ou 300 FPS.Física Pseudo-3D: Usamos a tela 2D para movimento, mas calculamos uma parábola matemática no eixo Z (jumpZ) para simular a altura do pulo por cima do grid.Attach Bones (Soquetes): Sistema que lê a hierarquia do osso. Conseguimos pendurar armas nas mãos e asas na coluna (Point04), fazendo com que o objeto herde a matriz de rotação e movimento do corpo em tempo real.Combate Base: Lógica de state machine rudimentar. O personagem persegue, aguarda cooldown, bate, levanta o dano flutuante e aplica o state de morte no monstro (com interpolação de Alpha para sumir).4. Gargalos e Próximos Passos (Fase 2)O protótipo provou que a renderização funciona, mas precisamos resolver alguns problemas arquiteturais para o jogo escalar:CPU Skinning: A interpolação das animações (multiplicação de matrizes dos ossos) está sendo calculada no processador a cada frame dentro do GetInterpolatedBone. Para renderizar dezenas de jogadores na tela, precisamos mover isso para um Vertex Shader (GPU Skinning).Refatoração do Main: O Conquer.cpp está gigantesco. Precisamos migrar as entidades e a lógica de combate para um ECS (Entity Component System) na dll de Game.Pathfinding Real (A):* O jogador anda em linha reta ignorando obstáculos. Precisamos cruzar a lógica do mouse com a matriz de colisão do arquivo .DMap usando o algoritmo A-Star.Network: Conectar as lógicas de spawn, dano e IDs de equipamento com os pacotes TCP da Network.dll.
 
 5. Here are the shortcuts:
 6. Number 1: You turn into a small woman
