@@ -1,6 +1,3 @@
-// ============================================================================
-// Conquer Kayank Engine
-// ============================================================================
 #include "pch.h"
 #include "Graphics.h"
 #include "Graphics_D3D.h"
@@ -546,4 +543,7 @@ namespace Graphics {
     void SceneRenderer::LoadTexture(const wchar_t* filename) { pImpl->LoadTexture(filename); }
     int SceneRenderer::LoadTextureFromMemory(const uint8_t* data, size_t size) { return pImpl->LoadTextureFromMemory(data, size); }
     void SceneRenderer::DeleteTexture(int id) { pImpl->DeleteTexture(id); }
+
+    void* SceneRenderer::GetD3DDevice() { return D3DContext::GetInstance().device.Get(); }
+    void* SceneRenderer::GetD3DContext() { return D3DContext::GetInstance().context.Get(); }
 }

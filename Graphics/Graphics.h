@@ -1,6 +1,3 @@
-// ============================================================================
-// Conquer Kayank Engine
-// ============================================================================
 #pragma once
 #include <windows.h>
 #include <cstdint>
@@ -32,6 +29,10 @@ namespace Graphics {
         void DrawMesh3D(const Resource::C3Model& model, float x, float y, int textureId, int frame = 0, float angle = -0.78539f, float pitch = 0.0f, bool isPlayer = false, float scale = 1.0f, const Resource::C3Model* parentModel = nullptr, int linkBoneIndex = -1, const std::string& effectName = "", int asb = 5, int adb = 6, float alpha = 1.0f, bool disableZWrite = false);
 
         void DrawParticles(const Resource::C3Model& model, float x, float y, int textureId, int frame, float angle = -0.78539f, float pitch = 0.0f, float scale = 1.0f, int asb = 5, int adb = 6);
+
+        // [NOVO] Ponte segura para o ImGui pegar o DirectX da DLL
+        void* GetD3DDevice();
+        void* GetD3DContext();
 
     private:
         struct Impl;

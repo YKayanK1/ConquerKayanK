@@ -13,6 +13,9 @@
 #include <cmath>
 #include <cstdlib> 
 #include <ctime>   
+#include <sstream>
+
+#include <d3d11.h> // [NOVO] Importando nativamente no lugar do Header interno
 
 #include "../Graphics/Graphics.h"
 #include "../Resource/Resource.h"
@@ -22,6 +25,21 @@
 #include "Game_Utils.h"
 
 #include <DirectXMath.h>
+
+// Headers do ImGui
+#include "imgui.h"
+#include "backends/imgui_impl_win32.h"
+#include "backends/imgui_impl_dx11.h"
+
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+WNDPROC OriginalWndProc = nullptr;
+
+LRESULT CALLBACK HookWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
+        return true;
+    return CallWindowProc(OriginalWndProc, hWnd, msg, wParam, lParam);
+}
 
 namespace Game {
     std::tuple<int, int, int> GenerateGlowTextTexture(
@@ -256,6 +274,12 @@ public:
     };
     std::vector<LoadedArmorPart> m_currentArmorParts;
 
+    struct GameItemDef {
+        uint32_t id;
+        std::string name;
+    };
+    std::vector<GameItemDef> m_gameItems;
+
     std::unordered_map<int16_t, int> m_puzzleTextures;
     Resource::DMapData m_currentDMap;
     Resource::PulData m_currentPul;
@@ -274,11 +298,97 @@ public:
     int m_debugTexW = 0, m_debugTexH = 0;
     std::wstring m_lastDebugStr = L"";
 
+    void LoadEffect(const std::string& effectName, float mapX = -1.0f, float mapY = -1.0f, float screenOffsetX = 0.0f, float screenOffsetY = 0.0f, bool isDamage = false) {
+        m_currentEffectName = effectName;
+
+        auto it = m_effectConfigs.find(effectName);
+        if (it == m_effectConfigs.end()) {
+            std::string lowerName = effectName;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+            it = m_effectConfigs.find(lowerName);
+            if (it == m_effectConfigs.end()) return;
+        }
+
+        auto& config = it->second;
+
+        ActiveEffect newActiveEffect;
+        newActiveEffect.config = config;
+        newActiveEffect.mapX = mapX;
+        newActiveEffect.mapY = mapY;
+        newActiveEffect.screenOffsetX = screenOffsetX;
+        newActiveEffect.screenOffsetY = screenOffsetY;
+
+        newActiveEffect.baseOffsetY = screenOffsetY;
+        newActiveEffect.isDamageNumber = isDamage;
+        newActiveEffect.currentLife = 0.0f;
+        newActiveEffect.maxLife = 2.0f;
+
+        if (config.delay <= 0) newActiveEffect.isWaitingDelay = false;
+
+        for (int i = 0; i < config.amount; i++) {
+            if (i >= config.parts.size()) break;
+            auto& partConfig = config.parts[i];
+            LoadedEffectPart newPart;
+
+            if (m_c3Paths.find(partConfig.effectId) != m_c3Paths.end()) {
+                std::string c3Path = m_c3Paths[partConfig.effectId];
+                newPart.model = m_resource.LoadC3Model(c3Path);
+            }
+            if (m_ddsPaths.find(partConfig.textureId) != m_ddsPaths.end()) {
+                std::string ddsPath = m_ddsPaths[partConfig.textureId];
+                auto texData = m_resource.GetFileData(ddsPath);
+                if (!texData.empty()) {
+                    newPart.textureId = m_renderer.LoadTextureFromMemory(texData.data(), texData.size());
+                }
+            }
+            newActiveEffect.parts.push_back(newPart);
+        }
+        m_activeEffects.push_back(newActiveEffect);
+    }
+
+    void LoadItemTypes(const std::string& path) {
+        auto data = m_resource.GetFileData(path);
+        if (data.empty()) return;
+
+        std::string content((char*)data.data(), data.size());
+        std::istringstream iss(content);
+        std::string line;
+
+        while (std::getline(iss, line)) {
+            line.erase(0, line.find_first_not_of(" \r\n\t"));
+            line.erase(line.find_last_not_of(" \r\n\t") + 1);
+            if (line.empty() || line.find("Amount=") == 0 || line[0] == ';' || line[0] == '#') continue;
+
+            std::istringstream ls(line);
+            uint32_t id;
+            std::string name;
+
+            if (ls >> id >> name) {
+                m_gameItems.push_back({ id, name });
+            }
+        }
+    }
+
+    void EquipItemByID(uint32_t itemId) {
+        if (itemId >= 130000 && itemId < 150000) {
+            ChangeArmor(m_player.modelType, itemId);
+        }
+        else if (itemId >= 400000 && itemId < 600000) {
+            ChangeWeapon(itemId, m_player.leftHandWeaponId);
+        }
+        else if (itemId >= 900000 && itemId < 1000000) {
+            ChangeWeapon(m_player.rightHandWeaponId, itemId);
+        }
+    }
+
     bool Initialize(HINSTANCE hInstance) {
         if (!m_window.Create(hInstance, L"Conquer Kayank - Engine Master")) return false;
         m_renderer.Initialize(m_window.m_hWnd, m_window.m_width, m_window.m_height);
 
         m_window.onMouseWheel = [this](int delta) {
+            ImGuiIO& io = ImGui::GetIO();
+            if (io.WantCaptureMouse) return;
+
             if (delta > 0) m_zoom += 0.1f;
             else if (delta < 0) m_zoom -= 0.1f;
             if (m_zoom < 0.5f) m_zoom = 0.5f;
@@ -287,6 +397,17 @@ public:
 
         std::string clientPath = "D:\\projetos\\kayank\\5017\\cliente";
         if (!m_resource.Initialize(clientPath)) return false;
+
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGuiIO& io = ImGui::GetIO(); (void)io;
+        ImGui::StyleColorsDark();
+
+        // [MAGICA] Usando o novo "GetD3DDevice" para cruzar a DLL com seguranca!
+        ImGui_ImplWin32_Init(m_window.m_hWnd);
+        ImGui_ImplDX11_Init((ID3D11Device*)m_renderer.GetD3DDevice(), (ID3D11DeviceContext*)m_renderer.GetD3DContext());
+
+        OriginalWndProc = (WNDPROC)SetWindowLongPtr(m_window.m_hWnd, GWLP_WNDPROC, (LONG_PTR)HookWndProc);
 
         m_effectConfigs = m_resource.Parse3DEffects("ini\\3DEffect.ini");
 
@@ -297,6 +418,8 @@ public:
         m_ddsPaths = m_resource.ParseResIni("ini\\3dtexture.ini");
         m_motionPaths = m_resource.ParseResIni("ini\\3Dmotion.ini");
         m_armorConfigs = m_resource.ParseArmorIni("ini\\armor.ini");
+
+        LoadItemTypes("ini\\itemtype.txt");
 
         auto loadGui = [&](const std::vector<std::string>& paths) -> int {
             for (const auto& p : paths) {
@@ -326,8 +449,6 @@ public:
         m_player.armorId = 300000;
         ChangeWeapon(0, 0);
         ChangeArmor(Game::ModelType::SmallFemale, m_player.armorId);
-
-        
 
         auto monsterTexData = m_resource.GetFileData("c3\\texture\\104000000.dds");
         if (!monsterTexData.empty()) {
@@ -666,6 +787,99 @@ public:
         }
     }
 
+    void DrawImGuiPanel() {
+        ImGui::Begin("Painel de Controle KayanK");
+
+        if (ImGui::CollapsingHeader("Personagem (Modelo Base)", ImGuiTreeNodeFlags_DefaultOpen)) {
+            int currentModel = (int)m_player.modelType;
+            bool modelChanged = false;
+
+            if (ImGui::RadioButton("Mulher Pequena", &currentModel, 1)) modelChanged = true;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Mulher Alta", &currentModel, 2)) modelChanged = true;
+
+            if (ImGui::RadioButton("Homem Pequeno", &currentModel, 3)) modelChanged = true;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Homem Alto", &currentModel, 4)) modelChanged = true;
+
+            if (modelChanged) {
+                ChangeArmor((Game::ModelType)currentModel, m_player.armorId);
+            }
+        }
+
+        if (ImGui::CollapsingHeader("Equipamentos (ItemType.txt)")) {
+            static int item_current_idx = 0;
+            std::string previewValue = m_gameItems.empty() ? "Nenhum Item Carregado" : m_gameItems[item_current_idx].name;
+            if (ImGui::BeginCombo("Lista de Itens", previewValue.c_str())) {
+                for (int n = 0; n < m_gameItems.size(); n++) {
+                    const bool is_selected = (item_current_idx == n);
+                    std::string displayText = std::to_string(m_gameItems[n].id) + " - " + m_gameItems[n].name;
+                    if (ImGui::Selectable(displayText.c_str(), is_selected)) {
+                        item_current_idx = n;
+                        EquipItemByID(m_gameItems[n].id);
+                    }
+                    if (is_selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+        }
+
+        if (ImGui::CollapsingHeader("Asas e Acessorios")) {
+            if (ImGui::Button("Remover Asa Atual", ImVec2(-1.0f, 0.0f))) {
+                ChangeWing("Nenhum");
+            }
+            static std::vector<std::string> wingNames;
+            if (wingNames.empty()) {
+                for (auto& pair : m_effectConfigs) {
+                    std::string lowerName = pair.first;
+                    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+                    if (lowerName.find("wing") != std::string::npos) {
+                        wingNames.push_back(pair.first);
+                    }
+                }
+            }
+            static int wing_idx = 0;
+            if (ImGui::BeginCombo("Escolher Nova Asa", wingNames.empty() ? "Carregando..." : wingNames[wing_idx].c_str())) {
+                for (int n = 0; n < wingNames.size(); n++) {
+                    const bool is_selected = (wing_idx == n);
+                    if (ImGui::Selectable(wingNames[n].c_str(), is_selected)) {
+                        wing_idx = n;
+                        ChangeWing(wingNames[n]);
+                    }
+                    if (is_selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+        }
+
+        if (ImGui::CollapsingHeader("Testar Efeitos Visuais")) {
+            static std::vector<std::string> allEffects;
+            if (allEffects.empty()) {
+                for (auto& pair : m_effectConfigs) {
+                    allEffects.push_back(pair.first);
+                }
+            }
+            static int fx_idx = 0;
+            if (ImGui::BeginCombo("Banco de Dados de Efeitos", allEffects.empty() ? "Nenhum" : allEffects[fx_idx].c_str())) {
+                for (int n = 0; n < allEffects.size(); n++) {
+                    const bool is_selected = (fx_idx == n);
+                    if (ImGui::Selectable(allEffects[n].c_str(), is_selected)) {
+                        fx_idx = n;
+                    }
+                    if (is_selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::Button("Disparar Magia na Frente!", ImVec2(-1.0f, 40.0f))) {
+                if (!allEffects.empty()) {
+                    LoadEffect(allEffects[fx_idx], m_player.mapX + 2.0f, m_player.mapY + 2.0f);
+                }
+            }
+        }
+
+        ImGui::End();
+    }
+
     void Update(float deltaTime) {
         RECT rect;
         GetClientRect(m_window.m_hWnd, &rect);
@@ -683,147 +897,98 @@ public:
         HWND activeWindow = GetForegroundWindow();
         bool hasFocus = (activeWindow == m_window.m_hWnd);
 
-        if (hasFocus) {
-            static bool s_prev1 = false; bool curr1 = (GetAsyncKeyState('1') & 0x8000);
-            if (curr1 && !s_prev1) ChangeArmor(Game::ModelType::SmallFemale, m_player.armorId);
-            s_prev1 = curr1;
+        ImGuiIO& io = ImGui::GetIO();
 
-            static bool s_prev2 = false; bool curr2 = (GetAsyncKeyState('2') & 0x8000);
-            if (curr2 && !s_prev2) ChangeArmor(Game::ModelType::BigFemale, m_player.armorId);
-            s_prev2 = curr2;
+        if (hasFocus && !io.WantCaptureMouse) {
+            POINT pt; GetCursorPos(&pt); ScreenToClient(m_window.m_hWnd, &pt);
+            m_mouseX = pt.x; m_mouseY = pt.y;
 
-            static bool s_prev3 = false; bool curr3 = (GetAsyncKeyState('3') & 0x8000);
-            if (curr3 && !s_prev3) ChangeArmor(Game::ModelType::SmallMale, m_player.armorId);
-            s_prev3 = curr3;
+            bool isMouseInside = (pt.x >= 0 && pt.x < m_window.m_width && pt.y >= 0 && pt.y < m_window.m_height);
+            static bool s_prevLeftDown = false;
+            bool currentLeftDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+            bool leftClicked = currentLeftDown && !s_prevLeftDown;
+            s_prevLeftDown = currentLeftDown;
 
-            static bool s_prev4 = false; bool curr4 = (GetAsyncKeyState('4') & 0x8000);
-            if (curr4 && !s_prev4) ChangeArmor(Game::ModelType::BigMale, m_player.armorId);
-            s_prev4 = curr4;
-
-            static bool s_prev5 = false; bool curr5 = (GetAsyncKeyState('5') & 0x8000);
-            if (curr5 && !s_prev5) ChangeWeapon(0, 0);
-            s_prev5 = curr5;
-
-            static bool s_prev6 = false; bool curr6 = (GetAsyncKeyState('6') & 0x8000);
-            if (curr6 && !s_prev6) ChangeWeapon(410330, 0);
-            s_prev6 = curr6;
-
-            static bool s_prev7 = false; bool curr7 = (GetAsyncKeyState('7') & 0x8000);
-            if (curr7 && !s_prev7) ChangeWeapon(410330, 410330);
-            s_prev7 = curr7;
-
-            static bool s_prev9 = false; bool curr9 = (GetAsyncKeyState('8') & 0x8000);
-            if (curr9 && !s_prev9) ChangeWeapon(410330, 900090);
-            s_prev9 = curr9;
-
-            static bool s_prev0 = false; bool curr0 = (GetAsyncKeyState('9') & 0x8000);
-            if (curr0 && !s_prev0) ChangeWeapon(500320, 0);
-            s_prev0 = curr0;
-
-            static bool s_prev8 = false; bool curr8 = (GetAsyncKeyState('0') & 0x8000);
-            if (curr8 && !s_prev8) ChangeWing("_p_24_wing1_open110");
-            s_prev8 = curr8;
-
-            static bool s_prevE = false;
-            bool currentE = (GetAsyncKeyState('E') & 0x8000) != 0;
-            if (currentE && !s_prevE) {
-                if (!m_effectList.empty()) {
-                    m_currentEffectIndex++;
-                    if (m_currentEffectIndex >= (int)m_effectList.size()) m_currentEffectIndex = 0;
-                    LoadEffect(m_effectList[m_currentEffectIndex]);
-                }
-            }
-            s_prevE = currentE;
-        }
-
-        POINT pt; GetCursorPos(&pt); ScreenToClient(m_window.m_hWnd, &pt);
-        m_mouseX = pt.x; m_mouseY = pt.y;
-
-        bool isMouseInside = (pt.x >= 0 && pt.x < m_window.m_width && pt.y >= 0 && pt.y < m_window.m_height);
-        static bool s_prevLeftDown = false;
-        bool currentLeftDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-        bool leftClicked = currentLeftDown && !s_prevLeftDown;
-        s_prevLeftDown = currentLeftDown;
-
-        if (m_player.isAlert && !m_player.isAttacking) {
-            m_player.alertTimer -= deltaTime;
-            if (m_player.alertTimer <= 0.0f) {
-                m_player.isAlert = false;
-                m_player.alertTimer = 0.0f;
-            }
-        }
-
-        if (hasFocus && isMouseInside) {
-            if (m_currentDMap.isValid && m_currentPul.isValid) {
-                int puzzlePixelWidth = m_currentPul.horizontalTiles * m_tileSize;
-                int puzzlePixelHeight = m_currentPul.verticalTiles * m_tileSize;
-                Engine::IsometricCoordinateSystem coordSystem(puzzlePixelWidth, puzzlePixelHeight, m_currentDMap.height);
-
-                float cx = m_window.m_width / 2.0f;
-                float cy = m_window.m_height / 2.0f;
-                float unzoomedMouseX = cx + (pt.x - cx) / m_zoom;
-                float unzoomedMouseY = cy + (pt.y - cy) / m_zoom;
-
-                int clickedMonsterIdx = -1;
-                for (size_t i = 0; i < m_monsters.size(); i++) {
-                    auto [mWorldX, mWorldY] = coordSystem.MapToScreen(m_monsters[i].mapX, m_monsters[i].mapY);
-                    float drawX = mWorldX - m_cameraX;
-                    float drawY = mWorldY - m_cameraY;
-                    float zX = cx + (drawX - cx) * m_zoom;
-                    float zY = cy + (drawY - cy) * m_zoom;
-
-                    float mobW = 80.0f * m_zoom;
-                    float mobH = 130.0f * m_zoom;
-                    float mobLeft = zX - (mobW / 2.0f);
-                    float mobRight = zX + (mobW / 2.0f);
-                    float mobTop = zY - mobH;
-                    float mobBottom = zY + (20.0f * m_zoom);
-
-                    if (pt.x >= mobLeft && pt.x <= mobRight && pt.y >= mobTop && pt.y <= mobBottom) {
-                        if (!m_monsters[i].isDead) {
-                            clickedMonsterIdx = (int)i;
-                            break;
-                        }
-                    }
-                }
-
-                auto [targetX, targetY] = coordSystem.ScreenToMap(unzoomedMouseX, unzoomedMouseY, m_cameraX, m_cameraY);
-
-                if (leftClicked && clickedMonsterIdx != -1) {
-                    m_player.targetMonsterIndex = clickedMonsterIdx;
-                    m_player.isMoving = false;
-                    m_player.hasQueuedAction = false;
-                    m_player.isChasing = true;
-
+            if (m_player.isAlert && !m_player.isAttacking) {
+                m_player.alertTimer -= deltaTime;
+                if (m_player.alertTimer <= 0.0f) {
                     m_player.isAlert = false;
                     m_player.alertTimer = 0.0f;
                 }
-                else if (currentLeftDown && clickedMonsterIdx == -1) {
-                    m_player.targetMonsterIndex = -1;
-                    m_player.isAttacking = false;
-                    m_player.isChasing = false;
+            }
 
-                    float dx = targetX - m_player.mapX;
-                    float dy = targetY - m_player.mapY;
-                    float dist = std::sqrt(dx * dx + dy * dy);
+            if (isMouseInside) {
+                if (m_currentDMap.isValid && m_currentPul.isValid) {
+                    int puzzlePixelWidth = m_currentPul.horizontalTiles * m_tileSize;
+                    int puzzlePixelHeight = m_currentPul.verticalTiles * m_tileSize;
+                    Engine::IsometricCoordinateSystem coordSystem(puzzlePixelWidth, puzzlePixelHeight, m_currentDMap.height);
 
-                    if (!m_player.isJumping) {
-                        if (dist > 0.05f) m_player.facingAngle = -(std::atan2(dy, dx) - 0.78539f);
+                    float cx = m_window.m_width / 2.0f;
+                    float cy = m_window.m_height / 2.0f;
+                    float unzoomedMouseX = cx + (pt.x - cx) / m_zoom;
+                    float unzoomedMouseY = cy + (pt.y - cy) / m_zoom;
 
-                        if (GetAsyncKeyState(VK_CONTROL) & 0x8000) {
-                            m_player.isJumping = true; m_player.isMoving = false;
-                            m_player.jumpTimer = 0.0f; m_player.startMapX = m_player.mapX; m_player.startMapY = m_player.mapY;
-                            m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.currentFrame = 0;
-                        }
-                        else {
-                            m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.isMoving = true;
+                    int clickedMonsterIdx = -1;
+                    for (size_t i = 0; i < m_monsters.size(); i++) {
+                        auto [mWorldX, mWorldY] = coordSystem.MapToScreen(m_monsters[i].mapX, m_monsters[i].mapY);
+                        float drawX = mWorldX - m_cameraX;
+                        float drawY = mWorldY - m_cameraY;
+                        float zX = cx + (drawX - cx) * m_zoom;
+                        float zY = cy + (drawY - cy) * m_zoom;
+
+                        float mobW = 80.0f * m_zoom;
+                        float mobH = 130.0f * m_zoom;
+                        float mobLeft = zX - (mobW / 2.0f);
+                        float mobRight = zX + (mobW / 2.0f);
+                        float mobTop = zY - mobH;
+                        float mobBottom = zY + (20.0f * m_zoom);
+
+                        if (pt.x >= mobLeft && pt.x <= mobRight && pt.y >= mobTop && pt.y <= mobBottom) {
+                            if (!m_monsters[i].isDead) {
+                                clickedMonsterIdx = (int)i;
+                                break;
+                            }
                         }
                     }
-                    else if (leftClicked) {
-                        m_player.hasQueuedAction = true;
-                        m_player.queuedTargetX = targetX;
-                        m_player.queuedTargetY = targetY;
-                        m_player.queuedIsJump = (GetAsyncKeyState(VK_CONTROL) & 0x8000);
+
+                    auto [targetX, targetY] = coordSystem.ScreenToMap(unzoomedMouseX, unzoomedMouseY, m_cameraX, m_cameraY);
+
+                    if (leftClicked && clickedMonsterIdx != -1) {
+                        m_player.targetMonsterIndex = clickedMonsterIdx;
+                        m_player.isMoving = false;
+                        m_player.hasQueuedAction = false;
+                        m_player.isChasing = true;
+
+                        m_player.isAlert = false;
+                        m_player.alertTimer = 0.0f;
+                    }
+                    else if (currentLeftDown && clickedMonsterIdx == -1) {
+                        m_player.targetMonsterIndex = -1;
+                        m_player.isAttacking = false;
+                        m_player.isChasing = false;
+
+                        float dx = targetX - m_player.mapX;
+                        float dy = targetY - m_player.mapY;
+                        float dist = std::sqrt(dx * dx + dy * dy);
+
+                        if (!m_player.isJumping) {
+                            if (dist > 0.05f) m_player.facingAngle = -(std::atan2(dy, dx) - 0.78539f);
+
+                            if (GetAsyncKeyState(VK_CONTROL) & 0x8000) {
+                                m_player.isJumping = true; m_player.isMoving = false;
+                                m_player.jumpTimer = 0.0f; m_player.startMapX = m_player.mapX; m_player.startMapY = m_player.mapY;
+                                m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.currentFrame = 0;
+                            }
+                            else {
+                                m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.isMoving = true;
+                            }
+                        }
+                        else if (leftClicked) {
+                            m_player.hasQueuedAction = true;
+                            m_player.queuedTargetX = targetX;
+                            m_player.queuedTargetY = targetY;
+                            m_player.queuedIsJump = (GetAsyncKeyState(VK_CONTROL) & 0x8000);
+                        }
                     }
                 }
             }
@@ -1236,7 +1401,7 @@ public:
                     else if (m_player.isAlert) activeModel = (Resource::C3Model*)&part.alertModel;
 
                     if (activeModel->isValid)
-                        m_renderer.DrawMesh3D(*activeModel, cx, cy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, true, m_zoom, nullptr, -1, "", part.asb, part.adb);
+                        m_renderer.DrawMesh3D(*activeModel, cx, cy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, true, m_zoom, nullptr, -1, "", part.asb, part.adb, 1.0f, false);
                 }
 
                 Resource::C3Model* activeHair = &m_hairIdleModel;
@@ -1248,14 +1413,14 @@ public:
                 else if (m_player.isMoving) { activeHair = &m_hairWalkModel; }
                 else if (m_player.isAlert) { activeHair = &m_hairAlertModel; }
 
-                if (activeHair->isValid) m_renderer.DrawMesh3D(*activeHair, cx, cy - (m_player.jumpZ * m_zoom), m_hairTextureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom);
+                if (activeHair->isValid) m_renderer.DrawMesh3D(*activeHair, cx, cy - (m_player.jumpZ * m_zoom), m_hairTextureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, nullptr, -1, "", 5, 6, 1.0f, false);
 
                 int targetRightBone = m_rightHandPhy;
                 if (m_player.rightHandWeaponId / 100000 == 5) targetRightBone = m_leftHandPhy;
 
-                if (activeWeapon->isValid && mainBodyModel) m_renderer.DrawMesh3D(*activeWeapon, cx, cy - (m_player.jumpZ * m_zoom), m_weaponTextureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, targetRightBone);
+                if (activeWeapon->isValid && mainBodyModel) m_renderer.DrawMesh3D(*activeWeapon, cx, cy - (m_player.jumpZ * m_zoom), m_weaponTextureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, targetRightBone, "", 5, 6, 1.0f, false);
 
-                if (activeLWeapon->isValid && mainBodyModel) m_renderer.DrawMesh3D(*activeLWeapon, cx, cy - (m_player.jumpZ * m_zoom), m_lweaponTextureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, m_leftHandPhy);
+                if (activeLWeapon->isValid && mainBodyModel) m_renderer.DrawMesh3D(*activeLWeapon, cx, cy - (m_player.jumpZ * m_zoom), m_lweaponTextureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, m_leftHandPhy, "", 5, 6, 1.0f, false);
 
                 if (m_hasWing && mainBodyModel) {
                     int attachBone = (m_backPhy != -1) ? m_backPhy : 0;
@@ -1299,7 +1464,7 @@ public:
                     float drawX = mWorldX - m_cameraX; float drawY = mWorldY - m_cameraY;
                     float zX = cx + (drawX - cx) * m_zoom; float zY = cy + (drawY - cy) * m_zoom;
 
-                    m_renderer.DrawMesh3D(*activeMonsterModel, zX, zY, m_monsterTextureId, monster.currentFrame, monster.facingAngle, 0.0f, false, m_zoom, nullptr, -1, "", 5, 6, monster.alpha);
+                    m_renderer.DrawMesh3D(*activeMonsterModel, zX, zY, m_monsterTextureId, monster.currentFrame, monster.facingAngle, 0.0f, false, m_zoom, nullptr, -1, "", 5, 6, monster.alpha, false);
 
                     if (!monster.isDead && m_texHpBlack != -1 && m_texHpRed != -1 && m_texHpOrange != -1) {
                         int mobHpBarW = 40; int mobHpBarH = 4;
@@ -1386,7 +1551,7 @@ public:
 
                 if (part.model.isValid) {
                     if (!part.model.phys.empty()) {
-                        m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, 0.0f, false, eScale, nullptr, -1, "", asb, adb, eAlpha);
+                        m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, 0.0f, false, eScale, nullptr, -1, "", asb, adb, eAlpha, false);
                     }
                     if (!part.model.ptcls.empty()) {
                         for (auto& ptcl : part.model.ptcls) {
@@ -1426,7 +1591,8 @@ public:
         std::time_t now = std::time(nullptr);
         std::tm* localTime = std::localtime(&now);
         wchar_t debugBuffer[256];
-        swprintf(debugBuffer, 256, L"[KayanK-CO] Ping: 0, Fps: %d, %02d:%02d %02d/%02d/%04d",
+        swprintf(debugBuffer, 256, L"[KayanK-CO] (%d, %d) Ping: 0, Fps: %d, %02d:%02d %02d/%02d/%04d",
+            (int)m_player.mapX, (int)m_player.mapY,
             m_currentFps,
             localTime->tm_hour, localTime->tm_min, localTime->tm_mday, localTime->tm_mon + 1, localTime->tm_year + 1900);
 
@@ -1440,54 +1606,6 @@ public:
         }
 
         if (m_debugTexId != -1) m_renderer.DrawSprite(m_debugTexId, 10, 10, m_debugTexW, m_debugTexH);
-    }
-
-    void LoadEffect(const std::string& effectName, float mapX = -1.0f, float mapY = -1.0f, float screenOffsetX = 0.0f, float screenOffsetY = 0.0f, bool isDamage = false) {
-        m_currentEffectName = effectName;
-
-        auto it = m_effectConfigs.find(effectName);
-        if (it == m_effectConfigs.end()) {
-            std::string lowerName = effectName;
-            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
-            it = m_effectConfigs.find(lowerName);
-            if (it == m_effectConfigs.end()) return;
-        }
-
-        auto& config = it->second;
-
-        ActiveEffect newActiveEffect;
-        newActiveEffect.config = config;
-        newActiveEffect.mapX = mapX;
-        newActiveEffect.mapY = mapY;
-        newActiveEffect.screenOffsetX = screenOffsetX;
-        newActiveEffect.screenOffsetY = screenOffsetY;
-
-        newActiveEffect.baseOffsetY = screenOffsetY;
-        newActiveEffect.isDamageNumber = isDamage;
-        newActiveEffect.currentLife = 0.0f;
-        newActiveEffect.maxLife = 2.0f;
-
-        if (config.delay <= 0) newActiveEffect.isWaitingDelay = false;
-
-        for (int i = 0; i < config.amount; i++) {
-            if (i >= config.parts.size()) break;
-            auto& partConfig = config.parts[i];
-            LoadedEffectPart newPart;
-
-            if (m_c3Paths.find(partConfig.effectId) != m_c3Paths.end()) {
-                std::string c3Path = m_c3Paths[partConfig.effectId];
-                newPart.model = m_resource.LoadC3Model(c3Path);
-            }
-            if (m_ddsPaths.find(partConfig.textureId) != m_ddsPaths.end()) {
-                std::string ddsPath = m_ddsPaths[partConfig.textureId];
-                auto texData = m_resource.GetFileData(ddsPath);
-                if (!texData.empty()) {
-                    newPart.textureId = m_renderer.LoadTextureFromMemory(texData.data(), texData.size());
-                }
-            }
-            newActiveEffect.parts.push_back(newPart);
-        }
-        m_activeEffects.push_back(newActiveEffect);
     }
 
     void Run() {
@@ -1504,12 +1622,28 @@ public:
                 lastTime = currentTime;
                 if (deltaTime > 0.1f) deltaTime = 0.1f;
                 Update(deltaTime);
+
                 m_renderer.BeginFrame();
+
+                ImGui_ImplDX11_NewFrame();
+                ImGui_ImplWin32_NewFrame();
+                ImGui::NewFrame();
+
+                DrawImGuiPanel();
+
+                ImGui::Render();
                 DrawWorld(); DrawGUI();
+
+                ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
                 m_renderer.EndFrame();
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         }
+
+        ImGui_ImplDX11_Shutdown();
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext();
     }
 };
 

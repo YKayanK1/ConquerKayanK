@@ -1,5 +1,4 @@
-﻿  pch.cpp
-  Graphics.cpp
+﻿  Graphics.cpp
 D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(27,21): warning C4251: 'Resource::EffectConfig::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::EffectConfig'
   (compiling source file '/Graphics.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
@@ -145,7 +144,7 @@ D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(134,21): wa
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Graphics\Graphics.cpp(191,79): warning C4267: '=': conversion from 'size_t' to 'UINT', possible loss of data
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Graphics\Graphics.cpp(188,79): warning C4267: '=': conversion from 'size_t' to 'UINT', possible loss of data
   (compiling source file '/Graphics.cpp')
   
      Creating library D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Graphics.lib and object D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Graphics.exp
