@@ -1,4 +1,4 @@
-Conquer KayanK: Engine Architecture Report (Phase 1 - Baseline Rendering)
+[[Conquer KayanK: Engine Architecture Report (Phase 1 - Baseline Rendering)
 System Overview
 Conquer KayanK is a custom engine (written in pure C++ with Win32 API) designed to recreate the 2.5D isometric environment of the classic MMORPG Conquer Online . The engine overcomes the software limitations of the original game by using hardware-accelerated rendering via DirectX 11 .
 The current architecture is strictly monolithic for prototyping reasons, but it already separates responsibilities for memory loading (Resource), window logic (Window), and rendering abstraction (Graphics).
@@ -50,7 +50,7 @@ Despite the fantastic progress, the current engine works as a "Contained Prototy
 13. Number 8: You add a blade and a shield
 14. Number 9: You equip a bow
 15. Number 0: You display the wings
-16. For the letter 'E', you add an effect; there is a list of effects in the code.
+16. For the letter 'E', you add an effect; there is a list of effects in the code.](https://github.com/YKayanK1/ConquerKayanK)
 
 17.	![Texto Alternativo](x64/Debug/foto1.png)
 18.	![Texto Alternativo](x64/Debug/foto2.png)
@@ -60,3 +60,4 @@ Despite the fantastic progress, the current engine works as a "Contained Prototy
 22.	![Texto Alternativo](x64/Debug/foto6.png)
 23.	![Texto Alternativo](x64/Debug/foto7.png)
 
+](https://github.com/YKayanK1/ConquerKayanK)
