@@ -142,6 +142,11 @@ namespace Resource {
         std::unordered_map<uint32_t, WeaponConfig> ParseWeaponIni(const std::string& path) {
             return ParseWeaponIniData(GetFileData(path));
         }
+
+        // [NOVO] Implementação do leitor
+        std::unordered_map<uint32_t, std::string> ParseAction3DEffects(const std::string& path) {
+            return ParseAction3DEffectsData(GetFileData(path));
+        }
     };
 
     Manager::Manager() : pImpl(new Impl()) {}
@@ -160,4 +165,6 @@ namespace Resource {
     std::unordered_map<uint32_t, std::string> Manager::ParseResIni(const std::string& path) { return pImpl->ParseResIni(path); }
     std::unordered_map<uint32_t, ArmorConfig> Manager::ParseArmorIni(const std::string& path) { return pImpl->ParseArmorIni(path); }
     std::unordered_map<uint32_t, WeaponConfig> Manager::ParseWeaponIni(const std::string& path) { return pImpl->ParseWeaponIni(path); } // [NOVO]
+    std::unordered_map<uint32_t, std::string> Manager::ParseAction3DEffects(const std::string& path) { return pImpl->ParseAction3DEffects(path); }
+
 }

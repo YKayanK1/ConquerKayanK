@@ -212,6 +212,7 @@ public:
 
     int m_hairTextureId = -1;
 
+    std::vector<std::string> m_effectList;
     std::unordered_map<std::string, Resource::EffectConfig> m_effectConfigs;
     std::unordered_map<uint32_t, std::string> m_c3Paths;
     std::unordered_map<uint32_t, std::string> m_ddsPaths;
@@ -220,6 +221,7 @@ public:
     std::unordered_map<uint32_t, Resource::ArmorConfig> m_armorConfigs;
     std::unordered_map<uint32_t, Resource::ArmorConfig> m_armetConfigs;
     std::unordered_map<uint32_t, Resource::WeaponConfig> m_weaponConfigs;
+    std::unordered_map<uint32_t, std::string> m_action3DEffects;
 
     struct LoadedEffectPart {
         Resource::C3Model model;
@@ -258,6 +260,10 @@ public:
     int m_rightHandPhy = -1;
     int m_leftHandPhy = -1;
     int m_backPhy = -1;
+    int m_headPhy = -1;
+
+    float m_weaponEffectTimer = 0.0f;
+    int m_weaponEffectFrame = 0;
 
     struct LoadedArmorPart {
         Resource::C3Model idleModel;
@@ -278,6 +284,10 @@ public:
         int textureId = -1;
         int asb = 5;
         int adb = 6;
+
+        bool hasEffect = false;
+        Resource::EffectConfig effectConfig;
+        std::vector<LoadedEffectPart> effectParts;
     };
     std::vector<LoadedWeaponPart> m_rightWeaponParts;
     std::vector<LoadedWeaponPart> m_leftWeaponParts;
@@ -334,6 +344,9 @@ public:
         std::string content((char*)data.data(), data.size());
         std::istringstream iss(content);
         std::string line;
+
+        std::getline(iss, line);
+
         while (std::getline(iss, line)) {
             if (line.empty()) continue;
             std::replace(line.begin(), line.end(), ';', ' ');
@@ -425,6 +438,10 @@ public:
 
         m_effectConfigs = m_resource.Parse3DEffects("ini\\3DEffect.ini");
 
+        for (auto& pair : m_effectConfigs) {
+            m_effectList.push_back(pair.first);
+        }
+
         m_c3Paths = m_resource.ParseResIni("ini\\3dobj.ini");
         auto fxC3 = m_resource.ParseResIni("ini\\3DEffectObj.ini");
         m_c3Paths.insert(fxC3.begin(), fxC3.end());
@@ -435,6 +452,7 @@ public:
         m_armorConfigs = m_resource.ParseArmorIni("ini\\armor.ini");
         m_armetConfigs = m_resource.ParseArmorIni("ini\\armet.ini");
         m_weaponConfigs = m_resource.ParseWeaponIni("ini\\weapon.ini");
+        m_action3DEffects = m_resource.ParseAction3DEffects("ini\\Action3DEffect.ini");
 
         LoadItemTypes("ini\\itemtype.txt");
         LoadMonsterDB();
@@ -740,11 +758,7 @@ public:
         for (auto& p : m_currentGarmentParts) { if (p.textureId != -1) m_renderer.DeleteTexture(p.textureId); }
         m_currentGarmentParts.clear();
 
-        if (garmentId == 0) {
-            // Reestabelece os ossos originais da armadura base
-            ChangeArmor(m_player.modelType, m_player.armorId);
-            return;
-        }
+        if (garmentId == 0) return;
 
         Resource::C3Model animIdle = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::StandBy);
         Resource::C3Model animWalkL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunL);
@@ -913,7 +927,10 @@ public:
         m_player.leftHandWeaponId = leftId;
 
         auto loadWeaponParts = [&](uint32_t wid, std::vector<LoadedWeaponPart>& outParts) {
-            for (auto& p : outParts) if (p.textureId != -1) m_renderer.DeleteTexture(p.textureId);
+            for (auto& p : outParts) {
+                if (p.textureId != -1) m_renderer.DeleteTexture(p.textureId);
+                for (auto& ep : p.effectParts) if (ep.textureId != -1) m_renderer.DeleteTexture(ep.textureId);
+            }
             outParts.clear();
             if (wid == 0) return;
 
@@ -933,6 +950,32 @@ public:
                             newPart.textureId = m_renderer.LoadTextureFromMemory(texData.data(), texData.size());
                         }
                     }
+
+                    if (m_action3DEffects.find(wid) != m_action3DEffects.end()) {
+                        std::string effName = m_action3DEffects[wid];
+                        std::string lowerEffName = effName;
+                        std::transform(lowerEffName.begin(), lowerEffName.end(), lowerEffName.begin(), ::tolower);
+
+                        auto it = m_effectConfigs.find(lowerEffName);
+                        if (it == m_effectConfigs.end()) it = m_effectConfigs.find(effName);
+
+                        if (it != m_effectConfigs.end()) {
+                            newPart.hasEffect = true;
+                            newPart.effectConfig = it->second;
+                            for (auto& effCfgPart : newPart.effectConfig.parts) {
+                                LoadedEffectPart ep;
+                                if (m_c3Paths.count(effCfgPart.effectId)) {
+                                    ep.model = m_resource.LoadC3Model(m_c3Paths[effCfgPart.effectId]);
+                                }
+                                if (m_ddsPaths.count(effCfgPart.textureId)) {
+                                    auto td = m_resource.GetFileData(m_ddsPaths[effCfgPart.textureId]);
+                                    if (!td.empty()) ep.textureId = m_renderer.LoadTextureFromMemory(td.data(), td.size());
+                                }
+                                newPart.effectParts.push_back(ep);
+                            }
+                        }
+                    }
+
                     outParts.push_back(newPart);
                 }
             }
@@ -1030,7 +1073,6 @@ public:
                 Resource::C3Model baseModel = m_resource.LoadC3Model(c3Path);
 
                 if (baseModel.isValid) {
-                    // Armazena os ossos pela armadura
                     if (m_currentArmorParts.empty() && m_currentGarmentParts.empty()) {
                         m_rightHandPhy = -1; m_leftHandPhy = -1; m_backPhy = -1;
                         for (size_t k = 0; k < baseModel.phys.size(); k++) {
@@ -1616,6 +1658,13 @@ public:
             }
         }
 
+        m_weaponEffectTimer += deltaTime * 1000.0f;
+        if (m_weaponEffectTimer >= 33.0f) {
+            m_weaponEffectFrame++;
+            m_weaponEffectTimer -= 33.0f;
+            if (m_weaponEffectFrame >= 30) m_weaponEffectFrame = 0;
+        }
+
         std::vector<Game::MonsterEntity> spawnedMonsters;
 
         for (auto it = m_monsters.begin(); it != m_monsters.end(); ) {
@@ -1653,12 +1702,15 @@ public:
                         Game::MonsterEntity faisao;
                         faisao.mapX = m_player.mapX + (rand() % 12 - 6);
                         faisao.mapY = m_player.mapY + (rand() % 12 - 6);
-                        faisao.startX = faisao.mapX; faisao.startY = faisao.mapY;
+                        faisao.startX = faisao.mapX;
+                        faisao.startY = faisao.mapY;
                         faisao.hp = 1000;
                         faisao.maxHp = 1000;
                         faisao.visualHp = 1000.0f;
                         auto [mTex, mW, mH] = Game::GenerateTextTexture(m_renderer, L"Pheasant", RGB(255, 255, 255));
-                        faisao.nameTexId = mTex; faisao.nameW = mW; faisao.nameH = mH;
+                        faisao.nameTexId = mTex;
+                        faisao.nameW = mW;
+                        faisao.nameH = mH;
 
                         spawnedMonsters.push_back(faisao);
                         it = m_monsters.erase(it);
@@ -1695,7 +1747,8 @@ public:
                 float dist = std::sqrt(dx * dx + dy * dy);
 
                 if (dist < 0.1f) {
-                    monster.mapX = monster.targetX; monster.mapY = monster.targetY;
+                    monster.mapX = monster.targetX;
+                    monster.mapY = monster.targetY;
                     monster.isMoving = false;
                     monster.currentAction = 100;
                     monster.currentFrame = 0;
@@ -1710,19 +1763,27 @@ public:
                 }
 
                 monster.animTimer += deltaTime;
-                if (monster.animTimer >= (1.0f / 15.0f)) { monster.currentFrame++; monster.animTimer -= (1.0f / 15.0f); }
+                if (monster.animTimer >= (1.0f / 15.0f)) {
+                    monster.currentFrame++;
+                    monster.animTimer -= (1.0f / 15.0f);
+                }
             }
             else {
                 monster.waitTimer += deltaTime;
                 if (monster.waitTimer >= monster.timeToWait) {
-                    float offsetX = (float)((rand() % 9) - 4); float offsetY = (float)((rand() % 9) - 4);
-                    monster.targetX = monster.startX + offsetX; monster.targetY = monster.startY + offsetY;
+                    float offsetX = (float)((rand() % 9) - 4);
+                    float offsetY = (float)((rand() % 9) - 4);
+                    monster.targetX = monster.startX + offsetX;
+                    monster.targetY = monster.startY + offsetY;
                     monster.isMoving = true;
                     monster.currentAction = 120;
                     monster.currentFrame = 0;
                 }
                 monster.animTimer += deltaTime;
-                if (monster.animTimer >= (1.0f / 8.0f)) { monster.currentFrame++; monster.animTimer -= (1.0f / 8.0f); }
+                if (monster.animTimer >= (1.0f / 8.0f)) {
+                    monster.currentFrame++;
+                    monster.animTimer -= (1.0f / 8.0f);
+                }
             }
             ++it;
         }
@@ -1835,7 +1896,6 @@ public:
         for (const auto& node : renderQueue) {
             if (node.type == 0) {
 
-                // [CORRIGIDO] Lógica absoluta: Fantasia SUBSTITUI a armadura!
                 const std::vector<LoadedArmorPart>* activeBodyParts = &m_currentArmorParts;
                 if (!m_currentGarmentParts.empty()) {
                     activeBodyParts = &m_currentGarmentParts;
@@ -1850,7 +1910,6 @@ public:
                     else mainBodyModel = (Resource::C3Model*)&(*activeBodyParts)[0].idleModel;
                 }
 
-                // Desenha APENAS o corpo que está ativo (Armadura ou Fantasia)
                 for (const auto& part : *activeBodyParts) {
                     Resource::C3Model* activeModel = (Resource::C3Model*)&part.idleModel;
                     if (m_player.isAttacking) activeModel = (Resource::C3Model*)&part.attackModel[m_player.currentAttackIndex];
@@ -1859,7 +1918,7 @@ public:
                     else if (m_player.isAlert) activeModel = (Resource::C3Model*)&part.alertModel;
 
                     if (activeModel->isValid)
-                        m_renderer.DrawMesh3D(*activeModel, cx, cy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, true, m_zoom, nullptr, -1, "", part.asb, part.adb);
+                        m_renderer.DrawMesh3D(*activeModel, cx, cy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, true, m_zoom, nullptr, -1, 0, part.asb, part.adb);
                 }
 
                 if (m_currentArmetParts.empty()) {
@@ -1880,7 +1939,7 @@ public:
                         else if (m_player.isAlert) activeModel = (Resource::C3Model*)&part.alertModel;
 
                         if (activeModel->isValid)
-                            m_renderer.DrawMesh3D(*activeModel, cx, cy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, nullptr, -1, "", part.asb, part.adb);
+                            m_renderer.DrawMesh3D(*activeModel, cx, cy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, nullptr, -1, 0, part.asb, part.adb);
                     }
                 }
 
@@ -1894,12 +1953,37 @@ public:
 
                 for (auto& wPart : m_rightWeaponParts) {
                     if (wPart.model.isValid && mainBodyModel) {
-                        m_renderer.DrawMesh3D(wPart.model, cx, cy - (m_player.jumpZ * m_zoom), wPart.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, rightWeaponBone, "", wPart.asb, wPart.adb);
+                        m_renderer.DrawMesh3D(wPart.model, cx, cy - (m_player.jumpZ * m_zoom), wPart.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, rightWeaponBone, m_player.currentFrame, wPart.asb, wPart.adb);
+
+                        if (wPart.hasEffect) {
+                            for (size_t i = 0; i < wPart.effectParts.size(); i++) {
+                                auto& ep = wPart.effectParts[i];
+                                if (ep.model.isValid) {
+                                    int easb = wPart.effectConfig.parts[i].asb;
+                                    int eadb = wPart.effectConfig.parts[i].adb;
+                                    if (!ep.model.phys.empty()) m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, rightWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true);
+                                    if (!ep.model.ptcls.empty()) m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, rightWeaponBone, m_player.currentFrame);
+                                }
+                            }
+                        }
                     }
                 }
+
                 for (auto& wPart : m_leftWeaponParts) {
                     if (wPart.model.isValid && mainBodyModel) {
-                        m_renderer.DrawMesh3D(wPart.model, cx, cy - (m_player.jumpZ * m_zoom), wPart.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, leftWeaponBone, "", wPart.asb, wPart.adb);
+                        m_renderer.DrawMesh3D(wPart.model, cx, cy - (m_player.jumpZ * m_zoom), wPart.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, leftWeaponBone, m_player.currentFrame, wPart.asb, wPart.adb);
+
+                        if (wPart.hasEffect) {
+                            for (size_t i = 0; i < wPart.effectParts.size(); i++) {
+                                auto& ep = wPart.effectParts[i];
+                                if (ep.model.isValid) {
+                                    int easb = wPart.effectConfig.parts[i].asb;
+                                    int eadb = wPart.effectConfig.parts[i].adb;
+                                    if (!ep.model.phys.empty()) m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, leftWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true);
+                                    if (!ep.model.ptcls.empty()) m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, leftWeaponBone, m_player.currentFrame);
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1920,10 +2004,10 @@ public:
                             float wingPitch = 1.5708f;
 
                             if (!part.model.phys.empty()) {
-                                m_renderer.DrawMesh3D(part.model, cx + wingOffsetX, cy - (m_player.jumpZ * m_zoom) - wingOffsetY, part.textureId, m_wingFrame, wingRotation, wingPitch, false, m_zoom, mainBodyModel, attachBone, "", asb, adb, 1.0f, true);
+                                m_renderer.DrawMesh3D(part.model, cx + wingOffsetX, cy - (m_player.jumpZ * m_zoom) - wingOffsetY, part.textureId, m_wingFrame, wingRotation, wingPitch, false, m_zoom, mainBodyModel, attachBone, m_player.currentFrame, asb, adb, 1.0f, true);
                             }
                             if (!part.model.ptcls.empty()) {
-                                m_renderer.DrawParticles(part.model, cx + wingOffsetX, cy - (m_player.jumpZ * m_zoom) - wingOffsetY, part.textureId, m_wingFrame, wingRotation, wingPitch, m_zoom, asb, adb);
+                                m_renderer.DrawParticles(part.model, cx + wingOffsetX, cy - (m_player.jumpZ * m_zoom) - wingOffsetY, part.textureId, m_wingFrame, wingRotation, wingPitch, m_zoom, asb, adb, mainBodyModel, attachBone, m_player.currentFrame);
                             }
                         }
                     }
@@ -1939,7 +2023,7 @@ public:
                     float drawX = mWorldX - m_cameraX; float drawY = mWorldY - m_cameraY;
                     float zX = cx + (drawX - cx) * m_zoom; float zY = cy + (drawY - cy) * m_zoom;
 
-                    m_renderer.DrawMesh3D(render.model, zX, zY, render.textureId, monster.currentFrame, monster.facingAngle, 0.0f, false, m_zoom, nullptr, -1, "", render.asb, render.adb, monster.alpha);
+                    m_renderer.DrawMesh3D(render.model, zX, zY, render.textureId, monster.currentFrame, monster.facingAngle, 0.0f, false, m_zoom, nullptr, -1, 0, render.asb, render.adb, monster.alpha);
 
                     if (!monster.isDead && m_texHpBlack != -1 && m_texHpRed != -1 && m_texHpOrange != -1) {
                         int mobHpBarW = 40; int mobHpBarH = 4;
@@ -2028,7 +2112,7 @@ public:
 
                 if (part.model.isValid) {
                     if (!part.model.phys.empty()) {
-                        m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, false, eScale, nullptr, -1, "", asb, adb, eAlpha);
+                        m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, false, eScale, nullptr, -1, 0, asb, adb, eAlpha);
                     }
                     if (!part.model.ptcls.empty()) {
                         for (auto& ptcl : part.model.ptcls) {

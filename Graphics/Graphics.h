@@ -26,12 +26,12 @@ namespace Graphics {
         int LoadTextureFromMemory(const uint8_t* data, size_t size);
         void DeleteTexture(int id);
 
-        void DrawMesh3D(const Resource::C3Model& model, float x, float y, int textureId, int frame = 0, float angle = -0.78539f, float pitch = 0.0f, bool isPlayer = false, float scale = 1.0f, const Resource::C3Model* parentModel = nullptr, int linkBoneIndex = -1, const std::string& effectName = "", int asb = 5, int adb = 6, float alpha = 1.0f, bool disableZWrite = false);
+        // [CORRIGIDO] Removido o 'effectName' que era inútil, e adicionado o 'parentFrame' para sincronizar animações!
+        void DrawMesh3D(const Resource::C3Model& model, float x, float y, int textureId, int frame = 0, float angle = -0.78539f, float pitch = 0.0f, bool isPlayer = false, float scale = 1.0f, const Resource::C3Model* parentModel = nullptr, int linkBoneIndex = -1, int parentFrame = 0, int asb = 5, int adb = 6, float alpha = 1.0f, bool disableZWrite = false);
 
-        // [CORRIGIDO] Adicionamos o "float pitch" para as partículas também poderem deitar/levantar!
-        void DrawParticles(const Resource::C3Model& model, float x, float y, int textureId, int frame, float angle = -0.78539f, float pitch = 0.0f, float scale = 1.0f, int asb = 5, int adb = 6);
+        // [CORRIGIDO] Partículas agora suportam colar nos ossos (parentModel, linkBoneIndex) e acompanhar o frame do pai!
+        void DrawParticles(const Resource::C3Model& model, float x, float y, int textureId, int frame, float angle = -0.78539f, float pitch = 0.0f, float scale = 1.0f, int asb = 5, int adb = 6, const Resource::C3Model* parentModel = nullptr, int linkBoneIndex = -1, int parentFrame = 0);
 
-        // [NOVO] Ponte segura para o ImGui pegar o DirectX da DLL
         void* GetD3DDevice();
         void* GetD3DContext();
 

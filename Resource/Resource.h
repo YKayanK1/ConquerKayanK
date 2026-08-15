@@ -167,6 +167,9 @@ namespace Resource {
         std::unordered_map<uint32_t, ArmorConfig> ParseArmorIni(const std::string& filePath);
         std::unordered_map<uint32_t, WeaponConfig> ParseWeaponIni(const std::string& filePath);
 
+        // [NOVO] Lê os efeitos mágicos colados na arma!
+        std::unordered_map<uint32_t, std::string> ParseAction3DEffects(const std::string& filePath);
+
     private:
         struct Impl;
         Impl* pImpl;

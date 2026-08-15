@@ -20,9 +20,6 @@
 
 namespace Graphics {
 
-    // ========================================================================
-    // SHADERS (HLSL) EMBUTIDOS - [ATUALIZADOS COM SUPORTE A ALPHA E CORTE PRETO]
-    // ========================================================================
     const char* vertexShader2DCode = R"(
         cbuffer ConstantBuffer : register(b0) { matrix WVP; matrix Bones[128]; int HasAnimation; float Alpha; float2 padding; }
         struct VOut { float4 position : SV_POSITION; float2 tex : TEXCOORD; };
@@ -57,7 +54,7 @@ namespace Graphics {
                 output.position = mul(float4(pos, 1.0f), WVP);
             }
             output.tex = tex;
-            output.alpha = Alpha; // [NOVO] Passando o Fade para o Pixel Shader!
+            output.alpha = Alpha; 
             return output;
         }
     )";
@@ -68,7 +65,6 @@ namespace Graphics {
         float4 main(VOut input) : SV_TARGET {
             float4 color = shaderTexture.Sample(sampleType, input.tex);
             clip(color.a - 0.05f); 
-            // [NOVO] O Dano agora some suavemente usando o Alpha!
             return float4(color.rgb, color.a * input.alpha); 
         }
     )";
@@ -88,15 +84,10 @@ namespace Graphics {
         struct VOut { float4 position : SV_POSITION; float4 color : COLOR; float2 tex : TEXCOORD; };
         float4 main(VOut input) : SV_TARGET {
             float4 texColor = shaderTexture.Sample(sampleType, input.tex);
-            // [NOVO] DESTRUIDOR DE CAIXA PRETA: Se o pixel for preto (RGB < 5%), joga no lixo!
             if (texColor.r < 0.05f && texColor.g < 0.05f && texColor.b < 0.05f) discard;
             return texColor * input.color; 
         }
     )";
-
-    // ========================================================================
-    // ENGINE GRÁFICA
-    // ========================================================================
 
     struct Vertex2D { DirectX::XMFLOAT3 Pos; DirectX::XMFLOAT2 Tex; };
     struct ConstantBuffer { DirectX::XMMATRIX WVP; DirectX::XMMATRIX Bones[128]; int HasAnimation; float Alpha; DirectX::XMFLOAT2 padding; };
@@ -325,7 +316,7 @@ namespace Graphics {
             return DirectX::XMMatrixIdentity();
         }
 
-        void DrawMesh3D(const Resource::C3Model& model, float x, float y, int textureId, int frame, float angle, float pitch, bool isPlayer, float scale, const Resource::C3Model* parentModel, int linkBoneIndex, const std::string& effectName, int asb, int adb, float alpha, bool disableZWrite) {
+        void DrawMesh3D(const Resource::C3Model& model, float x, float y, int textureId, int frame, float angle, float pitch, bool isPlayer, float scale, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame, int asb, int adb, float alpha, bool disableZWrite) {
             if (model.phys.empty()) return;
 
             auto& d3d = D3DContext::GetInstance();
@@ -358,7 +349,8 @@ namespace Graphics {
             DirectX::XMMATRIX attachmentMat = DirectX::XMMatrixIdentity();
             if (parentModel != nullptr && linkBoneIndex >= 0 && linkBoneIndex < (int)parentModel->motions.size()) {
                 if (parentModel->motions[linkBoneIndex].boneCount > 0) {
-                    attachmentMat = GetInterpolatedBone(parentModel->motions[linkBoneIndex], 0, frame);
+                    // Agora a arma e a asa usam o frame de animação de quem está segurando elas!
+                    attachmentMat = GetInterpolatedBone(parentModel->motions[linkBoneIndex], 0, parentFrame);
                 }
             }
 
@@ -453,7 +445,8 @@ namespace Graphics {
             ctx->OMSetBlendState(blendStateAlpha.Get(), nullptr, 0xFFFFFFFF);
         }
 
-        void DrawParticles(const Resource::C3Model& model, float x, float y, int textureId, int frame, float angle, float pitch, float scale, int asb, int adb) {
+        // [CORRIGIDO] Função de partículas agora lê o Osso!
+        void DrawParticles(const Resource::C3Model& model, float x, float y, int textureId, int frame, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame) {
             if (model.ptcls.empty()) return;
 
             auto& d3d = D3DContext::GetInstance();
@@ -472,7 +465,6 @@ namespace Graphics {
                 0.0f, (float)d3d.screenWidth, (float)d3d.screenHeight, 0.0f, -1000.0f, 1000.0f
             );
 
-            // [CORRIGIDO] Aplicando o Pitch nas partículas!
             DirectX::XMMATRIX localPitch = DirectX::XMMatrixRotationX(pitch);
             DirectX::XMMATRIX rotZ = DirectX::XMMatrixRotationZ(angle);
             DirectX::XMMATRIX rotX = DirectX::XMMatrixRotationX(1.04719f);
@@ -480,8 +472,16 @@ namespace Graphics {
             float s = 0.6f * scale;
             DirectX::XMMATRIX modelScale = DirectX::XMMatrixScaling(s, -s, s);
 
-            // Juntamos o Pitch com a Rotação Global
-            DirectX::XMMATRIX world = localPitch * rotZ * rotX * modelScale * DirectX::XMMatrixTranslation(x, y, 0.0f);
+            // [NOVO] Adicionado a Matemática de Matrizes dos Ossos para a Partícula!
+            DirectX::XMMATRIX attachmentMat = DirectX::XMMatrixIdentity();
+            if (parentModel != nullptr && linkBoneIndex >= 0 && linkBoneIndex < (int)parentModel->motions.size()) {
+                if (parentModel->motions[linkBoneIndex].boneCount > 0) {
+                    attachmentMat = GetInterpolatedBone(parentModel->motions[linkBoneIndex], 0, parentFrame);
+                }
+            }
+
+            // O Efeito gruda no osso, copia a rotação e acompanha o corpo!
+            DirectX::XMMATRIX world = localPitch * attachmentMat * rotZ * rotX * modelScale * DirectX::XMMatrixTranslation(x, y, 0.0f);
 
             ConstantBuffer cb;
             cb.WVP = DirectX::XMMatrixTranspose(ortho);
@@ -580,13 +580,15 @@ namespace Graphics {
         void Resize(int w, int h) { D3DContext::GetInstance().Resize(w, h); }
         void BeginFrame() { D3DContext::GetInstance().BeginFrame(0.05f, 0.05f, 0.05f); }
         void DrawSprite(int id, int x, int y, int w, int h) { renderer.DrawSprite(id, x, y, w, h); }
-        void DrawMesh3D(const Resource::C3Model& model, float x, float y, int texId, int frame, float angle, float pitch, bool isPlayer, float scale, const Resource::C3Model* parentModel, int linkBoneIndex, const std::string& effectName, int asb, int adb, float alpha, bool disableZWrite) {
-            renderer.DrawMesh3D(model, x, y, texId, frame, angle, pitch, isPlayer, scale, parentModel, linkBoneIndex, effectName, asb, adb, alpha, disableZWrite);
+
+        // Recebendo parentFrame
+        void DrawMesh3D(const Resource::C3Model& model, float x, float y, int texId, int frame, float angle, float pitch, bool isPlayer, float scale, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame, int asb, int adb, float alpha, bool disableZWrite) {
+            renderer.DrawMesh3D(model, x, y, texId, frame, angle, pitch, isPlayer, scale, parentModel, linkBoneIndex, parentFrame, asb, adb, alpha, disableZWrite);
         }
 
-        // [SUBSTITUA AQUI TAMBÉM]
-        void DrawParticles(const Resource::C3Model& model, float x, float y, int texId, int frame, float angle, float pitch, float scale, int asb, int adb) {
-            renderer.DrawParticles(model, x, y, texId, frame, angle, pitch, scale, asb, adb);
+        // Recebendo parentModel, linkBoneIndex e parentFrame
+        void DrawParticles(const Resource::C3Model& model, float x, float y, int texId, int frame, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame) {
+            renderer.DrawParticles(model, x, y, texId, frame, angle, pitch, scale, asb, adb, parentModel, linkBoneIndex, parentFrame);
         }
         void EndFrame() { D3DContext::GetInstance().EndFrame(); }
         void LoadTexture(const wchar_t* filename) {}
@@ -600,13 +602,13 @@ namespace Graphics {
     void SceneRenderer::Resize(int w, int h) { pImpl->Resize(w, h); }
     void SceneRenderer::BeginFrame() { pImpl->BeginFrame(); }
     void SceneRenderer::DrawSprite(int id, int x, int y, int w, int h) { pImpl->DrawSprite(id, x, y, w, h); }
-    void SceneRenderer::DrawMesh3D(const Resource::C3Model& m, float x, float y, int texId, int f, float angle, float pitch, bool isPlayer, float scale, const Resource::C3Model* pModel, int boneIdx, const std::string& effectName, int asb, int adb, float alpha, bool disableZWrite) {
-        pImpl->DrawMesh3D(m, x, y, texId, f, angle, pitch, isPlayer, scale, pModel, boneIdx, effectName, asb, adb, alpha, disableZWrite);
+
+    void SceneRenderer::DrawMesh3D(const Resource::C3Model& m, float x, float y, int texId, int f, float angle, float pitch, bool isPlayer, float scale, const Resource::C3Model* pModel, int boneIdx, int parentFrame, int asb, int adb, float alpha, bool disableZWrite) {
+        pImpl->DrawMesh3D(m, x, y, texId, f, angle, pitch, isPlayer, scale, pModel, boneIdx, parentFrame, asb, adb, alpha, disableZWrite);
     }
 
-    // [E SUBSTITUA AQUI NO FINAL DO ARQUIVO]
-    void SceneRenderer::DrawParticles(const Resource::C3Model& m, float x, float y, int texId, int f, float angle, float pitch, float scale, int asb, int adb) {
-        pImpl->DrawParticles(m, x, y, texId, f, angle, pitch, scale, asb, adb);
+    void SceneRenderer::DrawParticles(const Resource::C3Model& m, float x, float y, int texId, int f, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* pModel, int boneIdx, int parentFrame) {
+        pImpl->DrawParticles(m, x, y, texId, f, angle, pitch, scale, asb, adb, pModel, boneIdx, parentFrame);
     }
     void SceneRenderer::EndFrame() { pImpl->EndFrame(); }
     void SceneRenderer::LoadTexture(const wchar_t* filename) { pImpl->LoadTexture(filename); }
