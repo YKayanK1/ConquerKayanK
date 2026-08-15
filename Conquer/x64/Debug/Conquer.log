@@ -152,5 +152,5 @@ D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(144,21): wa
 D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(1654,78): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
 D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(1738,78): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
 D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(1741,43): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(2139,19): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(2144,19): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
   Conquer.vcxproj -> D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Conquer.exe

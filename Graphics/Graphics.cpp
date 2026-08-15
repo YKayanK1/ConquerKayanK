@@ -59,6 +59,7 @@ namespace Graphics {
         }
     )";
 
+    // [CORRIGIDO] Removi o "discard" manual de pixels pretos. A luz aditiva cuida disso suavemente!
     const char* pixelShader3DCode = R"(
         Texture2D shaderTexture : register(t0); SamplerState sampleType : register(s0);
         struct VOut { float4 position : SV_POSITION; float2 tex : TEXCOORD; float alpha : COLOR; };
@@ -79,12 +80,12 @@ namespace Graphics {
         }
     )";
 
+    // [CORRIGIDO] Removi o "discard" manual daqui também!
     const char* pixelShaderPtclCode = R"(
         Texture2D shaderTexture : register(t0); SamplerState sampleType : register(s0);
         struct VOut { float4 position : SV_POSITION; float4 color : COLOR; float2 tex : TEXCOORD; };
         float4 main(VOut input) : SV_TARGET {
             float4 texColor = shaderTexture.Sample(sampleType, input.tex);
-            if (texColor.r < 0.05f && texColor.g < 0.05f && texColor.b < 0.05f) discard;
             return texColor * input.color; 
         }
     )";
@@ -93,6 +94,7 @@ namespace Graphics {
     struct ConstantBuffer { DirectX::XMMATRIX WVP; DirectX::XMMATRIX Bones[128]; int HasAnimation; float Alpha; DirectX::XMFLOAT2 padding; };
     struct VertexPtcl { DirectX::XMFLOAT3 Pos; DirectX::XMFLOAT4 Color; DirectX::XMFLOAT2 Tex; };
 
+    /* STREAMING_CHUNK:Inicializando Blending States... */
     class MasterRenderer {
     public:
         Microsoft::WRL::ComPtr<ID3D11Buffer> vb2D;
@@ -106,6 +108,7 @@ namespace Graphics {
         Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthState2D;
         Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthState3D;
         Microsoft::WRL::ComPtr<ID3D11DepthStencilState> depthStateNoWrite;
+
         Microsoft::WRL::ComPtr<ID3D11BlendState> blendStateAlpha;
         Microsoft::WRL::ComPtr<ID3D11BlendState> blendStateAdditive;
 
@@ -219,8 +222,8 @@ namespace Graphics {
             addDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
             addDesc.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
             addDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-            addDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-            addDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+            addDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
+            addDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
             addDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
             addDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
             device->CreateBlendState(&addDesc, &blendStateAdditive);
@@ -257,6 +260,18 @@ namespace Graphics {
         void DeleteTexture(int id) {
             if (textures.count(id)) {
                 textures.erase(id);
+            }
+        }
+
+        /* STREAMING_CHUNK: Aplicando o ColorEnable na seleção de Luz... */
+        void ApplyBlendState(int adb, int colorEnable) {
+            auto ctx = D3DContext::GetInstance().context;
+            // Se for adb=2 ou adb=4, OU se o script mandar (ColorEnable=1), liga o Brilho Aditivo!
+            if (adb == 2 || adb == 4 || colorEnable == 1) {
+                ctx->OMSetBlendState(blendStateAdditive.Get(), nullptr, 0xFFFFFFFF);
+            }
+            else {
+                ctx->OMSetBlendState(blendStateAlpha.Get(), nullptr, 0xFFFFFFFF);
             }
         }
 
@@ -316,7 +331,7 @@ namespace Graphics {
             return DirectX::XMMatrixIdentity();
         }
 
-        void DrawMesh3D(const Resource::C3Model& model, float x, float y, int textureId, int frame, float angle, float pitch, bool isPlayer, float scale, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame, int asb, int adb, float alpha, bool disableZWrite) {
+        void DrawMesh3D(const Resource::C3Model& model, float x, float y, int textureId, int frame, float angle, float pitch, bool isPlayer, float scale, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame, int asb, int adb, float alpha, bool disableZWrite, int colorEnable) {
             if (model.phys.empty()) return;
 
             auto& d3d = D3DContext::GetInstance();
@@ -329,12 +344,8 @@ namespace Graphics {
                 ctx->OMSetDepthStencilState(depthState3D.Get(), 0);
             }
 
-            if (adb == 2) {
-                ctx->OMSetBlendState(blendStateAdditive.Get(), nullptr, 0xFFFFFFFF);
-            }
-            else {
-                ctx->OMSetBlendState(blendStateAlpha.Get(), nullptr, 0xFFFFFFFF);
-            }
+            // [NOVO] Adicionado suporte ao ColorEnable para malhas 3D
+            ApplyBlendState(adb, colorEnable);
 
             DirectX::XMMATRIX ortho = DirectX::XMMatrixOrthographicOffCenterLH(
                 0.0f, (float)d3d.screenWidth, (float)d3d.screenHeight, 0.0f, -1000.0f, 1000.0f
@@ -349,7 +360,6 @@ namespace Graphics {
             DirectX::XMMATRIX attachmentMat = DirectX::XMMatrixIdentity();
             if (parentModel != nullptr && linkBoneIndex >= 0 && linkBoneIndex < (int)parentModel->motions.size()) {
                 if (parentModel->motions[linkBoneIndex].boneCount > 0) {
-                    // Agora a arma e a asa usam o frame de animação de quem está segurando elas!
                     attachmentMat = GetInterpolatedBone(parentModel->motions[linkBoneIndex], 0, parentFrame);
                 }
             }
@@ -442,11 +452,11 @@ namespace Graphics {
 
                 ctx->DrawIndexed(cache.indexCount, 0, 0);
             }
+
             ctx->OMSetBlendState(blendStateAlpha.Get(), nullptr, 0xFFFFFFFF);
         }
 
-        // [CORRIGIDO] Função de partículas agora lê o Osso!
-        void DrawParticles(const Resource::C3Model& model, float x, float y, int textureId, int frame, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame) {
+        void DrawParticles(const Resource::C3Model& model, float x, float y, int textureId, int frame, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame, int colorEnable) {
             if (model.ptcls.empty()) return;
 
             auto& d3d = D3DContext::GetInstance();
@@ -454,12 +464,8 @@ namespace Graphics {
 
             ctx->OMSetDepthStencilState(depthState2D.Get(), 0);
 
-            if (adb == 2) {
-                ctx->OMSetBlendState(blendStateAdditive.Get(), nullptr, 0xFFFFFFFF);
-            }
-            else {
-                ctx->OMSetBlendState(blendStateAlpha.Get(), nullptr, 0xFFFFFFFF);
-            }
+            // [NOVO] Adicionado suporte ao ColorEnable para Partículas
+            ApplyBlendState(adb, colorEnable);
 
             DirectX::XMMATRIX ortho = DirectX::XMMatrixOrthographicOffCenterLH(
                 0.0f, (float)d3d.screenWidth, (float)d3d.screenHeight, 0.0f, -1000.0f, 1000.0f
@@ -472,7 +478,6 @@ namespace Graphics {
             float s = 0.6f * scale;
             DirectX::XMMATRIX modelScale = DirectX::XMMatrixScaling(s, -s, s);
 
-            // [NOVO] Adicionado a Matemática de Matrizes dos Ossos para a Partícula!
             DirectX::XMMATRIX attachmentMat = DirectX::XMMatrixIdentity();
             if (parentModel != nullptr && linkBoneIndex >= 0 && linkBoneIndex < (int)parentModel->motions.size()) {
                 if (parentModel->motions[linkBoneIndex].boneCount > 0) {
@@ -480,7 +485,6 @@ namespace Graphics {
                 }
             }
 
-            // O Efeito gruda no osso, copia a rotação e acompanha o corpo!
             DirectX::XMMATRIX world = localPitch * attachmentMat * rotZ * rotX * modelScale * DirectX::XMMatrixTranslation(x, y, 0.0f);
 
             ConstantBuffer cb;
@@ -546,7 +550,8 @@ namespace Graphics {
                     }
                     alpha *= ptcl.globalAlpha;
                     if (alpha < 0.0f) alpha = 0.0f; if (alpha > 1.0f) alpha = 1.0f;
-                    DirectX::XMFLOAT4 color = { 1.0f, 1.0f, 1.0f, alpha };
+
+                    DirectX::XMFLOAT4 color = { 1.0f * alpha, 1.0f * alpha, 1.0f * alpha, alpha };
 
                     float rx = pSize * ptcl.scaleX; float ry = pSize * ptcl.scaleY;
                     float ptclAngle = age * ptcl.rotationSpeed;
@@ -581,14 +586,12 @@ namespace Graphics {
         void BeginFrame() { D3DContext::GetInstance().BeginFrame(0.05f, 0.05f, 0.05f); }
         void DrawSprite(int id, int x, int y, int w, int h) { renderer.DrawSprite(id, x, y, w, h); }
 
-        // Recebendo parentFrame
-        void DrawMesh3D(const Resource::C3Model& model, float x, float y, int texId, int frame, float angle, float pitch, bool isPlayer, float scale, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame, int asb, int adb, float alpha, bool disableZWrite) {
-            renderer.DrawMesh3D(model, x, y, texId, frame, angle, pitch, isPlayer, scale, parentModel, linkBoneIndex, parentFrame, asb, adb, alpha, disableZWrite);
+        void DrawMesh3D(const Resource::C3Model& model, float x, float y, int texId, int frame, float angle, float pitch, bool isPlayer, float scale, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame, int asb, int adb, float alpha, bool disableZWrite, int colorEnable) {
+            renderer.DrawMesh3D(model, x, y, texId, frame, angle, pitch, isPlayer, scale, parentModel, linkBoneIndex, parentFrame, asb, adb, alpha, disableZWrite, colorEnable);
         }
 
-        // Recebendo parentModel, linkBoneIndex e parentFrame
-        void DrawParticles(const Resource::C3Model& model, float x, float y, int texId, int frame, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame) {
-            renderer.DrawParticles(model, x, y, texId, frame, angle, pitch, scale, asb, adb, parentModel, linkBoneIndex, parentFrame);
+        void DrawParticles(const Resource::C3Model& model, float x, float y, int texId, int frame, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame, int colorEnable) {
+            renderer.DrawParticles(model, x, y, texId, frame, angle, pitch, scale, asb, adb, parentModel, linkBoneIndex, parentFrame, colorEnable);
         }
         void EndFrame() { D3DContext::GetInstance().EndFrame(); }
         void LoadTexture(const wchar_t* filename) {}
@@ -603,12 +606,12 @@ namespace Graphics {
     void SceneRenderer::BeginFrame() { pImpl->BeginFrame(); }
     void SceneRenderer::DrawSprite(int id, int x, int y, int w, int h) { pImpl->DrawSprite(id, x, y, w, h); }
 
-    void SceneRenderer::DrawMesh3D(const Resource::C3Model& m, float x, float y, int texId, int f, float angle, float pitch, bool isPlayer, float scale, const Resource::C3Model* pModel, int boneIdx, int parentFrame, int asb, int adb, float alpha, bool disableZWrite) {
-        pImpl->DrawMesh3D(m, x, y, texId, f, angle, pitch, isPlayer, scale, pModel, boneIdx, parentFrame, asb, adb, alpha, disableZWrite);
+    void SceneRenderer::DrawMesh3D(const Resource::C3Model& m, float x, float y, int texId, int f, float angle, float pitch, bool isPlayer, float scale, const Resource::C3Model* pModel, int boneIdx, int parentFrame, int asb, int adb, float alpha, bool disableZWrite, int colorEnable) {
+        pImpl->DrawMesh3D(m, x, y, texId, f, angle, pitch, isPlayer, scale, pModel, boneIdx, parentFrame, asb, adb, alpha, disableZWrite, colorEnable);
     }
 
-    void SceneRenderer::DrawParticles(const Resource::C3Model& m, float x, float y, int texId, int f, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* pModel, int boneIdx, int parentFrame) {
-        pImpl->DrawParticles(m, x, y, texId, f, angle, pitch, scale, asb, adb, pModel, boneIdx, parentFrame);
+    void SceneRenderer::DrawParticles(const Resource::C3Model& m, float x, float y, int texId, int f, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* pModel, int boneIdx, int parentFrame, int colorEnable) {
+        pImpl->DrawParticles(m, x, y, texId, f, angle, pitch, scale, asb, adb, pModel, boneIdx, parentFrame, colorEnable);
     }
     void SceneRenderer::EndFrame() { pImpl->EndFrame(); }
     void SceneRenderer::LoadTexture(const wchar_t* filename) { pImpl->LoadTexture(filename); }

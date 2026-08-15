@@ -149,7 +149,7 @@ D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(144,21): wa
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Graphics\Graphics.cpp(241,79): warning C4267: '=': conversion from 'size_t' to 'UINT', possible loss of data
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Graphics\Graphics.cpp(244,79): warning C4267: '=': conversion from 'size_t' to 'UINT', possible loss of data
   (compiling source file '/Graphics.cpp')
   
      Creating library D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Graphics.lib and object D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Graphics.exp

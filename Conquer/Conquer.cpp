@@ -1961,8 +1961,10 @@ public:
                                 if (ep.model.isValid) {
                                     int easb = wPart.effectConfig.parts[i].asb;
                                     int eadb = wPart.effectConfig.parts[i].adb;
-                                    if (!ep.model.phys.empty()) m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, rightWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true);
-                                    if (!ep.model.ptcls.empty()) m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, rightWeaponBone, m_player.currentFrame);
+                                    int eColor = wPart.effectConfig.colorEnable; // [NOVO] Lendo o ColorEnable
+
+                                    if (!ep.model.phys.empty()) m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, rightWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true, eColor); // Passando o eColor
+                                    if (!ep.model.ptcls.empty()) m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, rightWeaponBone, m_player.currentFrame, eColor); // Passando o eColor
                                 }
                             }
                         }
@@ -1979,8 +1981,10 @@ public:
                                 if (ep.model.isValid) {
                                     int easb = wPart.effectConfig.parts[i].asb;
                                     int eadb = wPart.effectConfig.parts[i].adb;
-                                    if (!ep.model.phys.empty()) m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, leftWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true);
-                                    if (!ep.model.ptcls.empty()) m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, leftWeaponBone, m_player.currentFrame);
+                                    int eColor = wPart.effectConfig.colorEnable; // [NOVO]
+
+                                    if (!ep.model.phys.empty()) m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, leftWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true, eColor); // Passando o eColor
+                                    if (!ep.model.ptcls.empty()) m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, leftWeaponBone, m_player.currentFrame, eColor); // Passando o eColor
                                 }
                             }
                         }
@@ -2109,16 +2113,17 @@ public:
                 auto& part = effect.parts[i];
                 int asb = effect.config.parts[i].asb;
                 int adb = effect.config.parts[i].adb;
+                int eColor = effect.config.colorEnable; // [NOVO] Lendo o ColorEnable
 
                 if (part.model.isValid) {
                     if (!part.model.phys.empty()) {
-                        m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, false, eScale, nullptr, -1, 0, asb, adb, eAlpha);
+                        m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, false, eScale, nullptr, -1, 0, asb, adb, eAlpha, false, eColor); // Passando o eColor
                     }
                     if (!part.model.ptcls.empty()) {
                         for (auto& ptcl : part.model.ptcls) {
                             ptcl.globalAlpha = eAlpha;
                         }
-                        m_renderer.DrawParticles(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, eScale, asb, adb);
+                        m_renderer.DrawParticles(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, eScale, asb, adb, nullptr, -1, 0, eColor); // Passando o eColor
                     }
                 }
             }
