@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "Graphics.h"
 #include "Graphics_D3D.h"
-#include "Graphics_Shaders.h"
 
 #include <d3d11.h>
 #include <dxgi.h>
@@ -21,24 +20,87 @@
 
 namespace Graphics {
 
-    struct Vertex2D {
-        DirectX::XMFLOAT3 Pos;
-        DirectX::XMFLOAT2 Tex;
-    };
+    // ========================================================================
+    // SHADERS (HLSL) EMBUTIDOS - [ATUALIZADOS COM SUPORTE A ALPHA E CORTE PRETO]
+    // ========================================================================
+    const char* vertexShader2DCode = R"(
+        cbuffer ConstantBuffer : register(b0) { matrix WVP; matrix Bones[128]; int HasAnimation; float Alpha; float2 padding; }
+        struct VOut { float4 position : SV_POSITION; float2 tex : TEXCOORD; };
+        VOut main(float3 pos : POSITION, float2 tex : TEXCOORD) {
+            VOut output;
+            output.position = mul(float4(pos, 1.0f), WVP);
+            output.tex = tex;
+            return output;
+        }
+    )";
 
-    struct ConstantBuffer {
-        DirectX::XMMATRIX WVP;
-        DirectX::XMMATRIX Bones[128];
-        int HasAnimation;
-        float Alpha;
-        DirectX::XMFLOAT2 padding;
-    };
+    const char* pixelShader2DCode = R"(
+        Texture2D shaderTexture : register(t0); SamplerState sampleType : register(s0);
+        struct VOut { float4 position : SV_POSITION; float2 tex : TEXCOORD; };
+        float4 main(VOut input) : SV_TARGET {
+            float4 color = shaderTexture.Sample(sampleType, input.tex);
+            clip(color.a - 0.1f); return color;
+        }
+    )";
 
-    struct VertexPtcl {
-        DirectX::XMFLOAT3 Pos;
-        DirectX::XMFLOAT4 Color;
-        DirectX::XMFLOAT2 Tex;
-    };
+    const char* vertexShader3DCode = R"(
+        cbuffer ConstantBuffer : register(b0) { matrix WVP; matrix Bones[128]; int HasAnimation; float Alpha; float2 padding; }
+        struct VOut { float4 position : SV_POSITION; float2 tex : TEXCOORD; float alpha : COLOR; };
+        
+        VOut main(float3 pos : POSITION, float2 tex : TEXCOORD, uint2 boneIdx : BLENDINDICES, float2 boneWt : BLENDWEIGHT) {
+            VOut output;
+            if (HasAnimation == 1) {
+                if (boneWt.x > 0.0f) output.position = mul(float4(pos, 1.0f), Bones[boneIdx.x]);
+                else if (boneWt.y > 0.0f) output.position = mul(float4(pos, 1.0f), Bones[boneIdx.y]);
+                else output.position = mul(float4(pos, 1.0f), WVP);
+            } else {
+                output.position = mul(float4(pos, 1.0f), WVP);
+            }
+            output.tex = tex;
+            output.alpha = Alpha; // [NOVO] Passando o Fade para o Pixel Shader!
+            return output;
+        }
+    )";
+
+    const char* pixelShader3DCode = R"(
+        Texture2D shaderTexture : register(t0); SamplerState sampleType : register(s0);
+        struct VOut { float4 position : SV_POSITION; float2 tex : TEXCOORD; float alpha : COLOR; };
+        float4 main(VOut input) : SV_TARGET {
+            float4 color = shaderTexture.Sample(sampleType, input.tex);
+            clip(color.a - 0.05f); 
+            // [NOVO] O Dano agora some suavemente usando o Alpha!
+            return float4(color.rgb, color.a * input.alpha); 
+        }
+    )";
+
+    const char* vertexShaderPtclCode = R"(
+        cbuffer ConstantBuffer : register(b0) { matrix WVP; }
+        struct VOut { float4 position : SV_POSITION; float4 color : COLOR; float2 tex : TEXCOORD; };
+        VOut main(float3 pos : POSITION, float4 color : COLOR, float2 tex : TEXCOORD) {
+            VOut output;
+            output.position = mul(float4(pos, 1.0f), WVP); output.color = color; output.tex = tex;
+            return output;
+        }
+    )";
+
+    const char* pixelShaderPtclCode = R"(
+        Texture2D shaderTexture : register(t0); SamplerState sampleType : register(s0);
+        struct VOut { float4 position : SV_POSITION; float4 color : COLOR; float2 tex : TEXCOORD; };
+        float4 main(VOut input) : SV_TARGET {
+            float4 texColor = shaderTexture.Sample(sampleType, input.tex);
+            // [NOVO] DESTRUIDOR DE CAIXA PRETA: Se o pixel for preto (RGB < 5%), joga no lixo!
+            if (texColor.r < 0.05f && texColor.g < 0.05f && texColor.b < 0.05f) discard;
+            return texColor * input.color; 
+        }
+    )";
+
+    // ========================================================================
+    // ENGINE GRÁFICA
+    // ========================================================================
+
+    struct Vertex2D { DirectX::XMFLOAT3 Pos; DirectX::XMFLOAT2 Tex; };
+    struct ConstantBuffer { DirectX::XMMATRIX WVP; DirectX::XMMATRIX Bones[128]; int HasAnimation; float Alpha; DirectX::XMFLOAT2 padding; };
+    struct VertexPtcl { DirectX::XMFLOAT3 Pos; DirectX::XMFLOAT4 Color; DirectX::XMFLOAT2 Tex; };
 
     class MasterRenderer {
     public:
@@ -410,12 +472,15 @@ namespace Graphics {
                 0.0f, (float)d3d.screenWidth, (float)d3d.screenHeight, 0.0f, -1000.0f, 1000.0f
             );
 
+            // [CORRIGIDO] Aplicando o Pitch nas partículas!
             DirectX::XMMATRIX localPitch = DirectX::XMMatrixRotationX(pitch);
             DirectX::XMMATRIX rotZ = DirectX::XMMatrixRotationZ(angle);
             DirectX::XMMATRIX rotX = DirectX::XMMatrixRotationX(1.04719f);
 
             float s = 0.6f * scale;
             DirectX::XMMATRIX modelScale = DirectX::XMMatrixScaling(s, -s, s);
+
+            // Juntamos o Pitch com a Rotação Global
             DirectX::XMMATRIX world = localPitch * rotZ * rotX * modelScale * DirectX::XMMatrixTranslation(x, y, 0.0f);
 
             ConstantBuffer cb;
@@ -518,6 +583,8 @@ namespace Graphics {
         void DrawMesh3D(const Resource::C3Model& model, float x, float y, int texId, int frame, float angle, float pitch, bool isPlayer, float scale, const Resource::C3Model* parentModel, int linkBoneIndex, const std::string& effectName, int asb, int adb, float alpha, bool disableZWrite) {
             renderer.DrawMesh3D(model, x, y, texId, frame, angle, pitch, isPlayer, scale, parentModel, linkBoneIndex, effectName, asb, adb, alpha, disableZWrite);
         }
+
+        // [SUBSTITUA AQUI TAMBÉM]
         void DrawParticles(const Resource::C3Model& model, float x, float y, int texId, int frame, float angle, float pitch, float scale, int asb, int adb) {
             renderer.DrawParticles(model, x, y, texId, frame, angle, pitch, scale, asb, adb);
         }
@@ -536,6 +603,8 @@ namespace Graphics {
     void SceneRenderer::DrawMesh3D(const Resource::C3Model& m, float x, float y, int texId, int f, float angle, float pitch, bool isPlayer, float scale, const Resource::C3Model* pModel, int boneIdx, const std::string& effectName, int asb, int adb, float alpha, bool disableZWrite) {
         pImpl->DrawMesh3D(m, x, y, texId, f, angle, pitch, isPlayer, scale, pModel, boneIdx, effectName, asb, adb, alpha, disableZWrite);
     }
+
+    // [E SUBSTITUA AQUI NO FINAL DO ARQUIVO]
     void SceneRenderer::DrawParticles(const Resource::C3Model& m, float x, float y, int texId, int f, float angle, float pitch, float scale, int asb, int adb) {
         pImpl->DrawParticles(m, x, y, texId, f, angle, pitch, scale, asb, adb);
     }

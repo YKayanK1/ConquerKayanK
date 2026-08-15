@@ -1,6 +1,3 @@
-// ============================================================================
-// Conquer Kayank Engine
-// ============================================================================
 #pragma once
 #include <string>
 #include <vector>
@@ -44,12 +41,25 @@ namespace Resource {
         int adb = 6;
     };
 
+    // [CORRIGIDO] ArmorConfig agora suporta múltiplas partes!
     struct RESOURCE_API ArmorConfig {
         uint32_t id = 0;
         int partCount = 0;
         std::vector<ArmorPart> parts;
     };
 
+    struct RESOURCE_API WeaponPart {
+        uint32_t mesh = 0;
+        uint32_t texture = 0;
+        int asb = 5;
+        int adb = 6;
+    };
+
+    struct RESOURCE_API WeaponConfig {
+        uint32_t id = 0;
+        int partCount = 0;
+        std::vector<WeaponPart> parts;
+    };
 
     struct RESOURCE_API Matrix4x4 { float m[16]; };
     struct RESOURCE_API Vec3 { float x, y, z; };
@@ -155,6 +165,7 @@ namespace Resource {
         std::unordered_map<uint32_t, std::string> ParseResIni(const std::string& filePath);
 
         std::unordered_map<uint32_t, ArmorConfig> ParseArmorIni(const std::string& filePath);
+        std::unordered_map<uint32_t, WeaponConfig> ParseWeaponIni(const std::string& filePath);
 
     private:
         struct Impl;

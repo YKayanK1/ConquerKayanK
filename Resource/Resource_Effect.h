@@ -38,6 +38,67 @@ namespace Resource {
         }
         return map;
     }
+    // [NOVO] Algoritmo dedicado para ler todas as partes de uma Arma (weapon.ini)
+    static std::unordered_map<uint32_t, WeaponConfig> ParseWeaponIniData(const std::vector<uint8_t>& data) {
+        std::unordered_map<uint32_t, WeaponConfig> weapons;
+        if (data.empty()) return weapons;
+
+        std::string content((char*)data.data(), data.size());
+        std::istringstream iss(content);
+        std::string line;
+
+        WeaponConfig currentWep;
+        bool inSection = false;
+
+        auto safeStoi = [](const std::string& s) -> int { try { return std::stoi(s); } catch (...) { return 0; } };
+        auto safeStoul = [](const std::string& s) -> uint32_t { try { return std::stoul(s); } catch (...) { return 0; } };
+
+        while (std::getline(iss, line)) {
+            line.erase(0, line.find_first_not_of(" \r\n\t"));
+            line.erase(line.find_last_not_of(" \r\n\t") + 1);
+            if (line.empty() || line[0] == ';' || line[0] == '#') continue;
+
+            if (line[0] == '[' && line.back() == ']') {
+                if (inSection && currentWep.id != 0) weapons[currentWep.id] = currentWep;
+                currentWep = WeaponConfig();
+                currentWep.id = safeStoul(line.substr(1, line.size() - 2));
+                inSection = true;
+                continue;
+            }
+
+            if (!inSection) continue;
+
+            size_t eqPos = line.find('=');
+            if (eqPos != std::string::npos) {
+                std::string key = line.substr(0, eqPos);
+                std::string val = line.substr(eqPos + 1);
+
+                if (key == "Part") {
+                    currentWep.partCount = safeStoi(val);
+                    currentWep.parts.resize(currentWep.partCount);
+                }
+                else if (key.find("Mesh") == 0) {
+                    int idx = safeStoi(key.substr(4));
+                    if (idx >= 0 && idx < currentWep.parts.size()) currentWep.parts[idx].mesh = safeStoul(val);
+                }
+                else if (key.find("Texture") == 0) {
+                    int idx = safeStoi(key.substr(7));
+                    if (idx >= 0 && idx < currentWep.parts.size()) currentWep.parts[idx].texture = safeStoul(val);
+                }
+                else if (key.find("Asb") == 0 || key.find("ASB") == 0) {
+                    int idx = safeStoi(key.substr(3));
+                    if (idx >= 0 && idx < currentWep.parts.size()) currentWep.parts[idx].asb = safeStoi(val);
+                }
+                else if (key.find("Adb") == 0 || key.find("ADB") == 0) {
+                    int idx = safeStoi(key.substr(3));
+                    if (idx >= 0 && idx < currentWep.parts.size()) currentWep.parts[idx].adb = safeStoi(val);
+                }
+            }
+        }
+        if (inSection && currentWep.id != 0) weapons[currentWep.id] = currentWep;
+
+        return weapons;
+    }
 
 
     static std::unordered_map<std::string, EffectConfig> Parse3DEffectsData(const std::vector<uint8_t>& data) {

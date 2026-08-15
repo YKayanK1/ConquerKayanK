@@ -1,5 +1,5 @@
 // ============================================================================
-// Conquer Kayank Engine
+// Conquer Kayank Engine - Master Version
 // ============================================================================
 #define _CRT_SECURE_NO_WARNINGS
 #define NOMINMAX
@@ -15,9 +15,8 @@
 #include <ctime>   
 #include <sstream>
 
-#include <d3d11.h> // [NOVO] Importando nativamente no lugar do Header interno
-
 #include "../Graphics/Graphics.h"
+#include "../Graphics/Graphics_D3D.h"
 #include "../Resource/Resource.h"
 #include "Engine_Window.h"
 #include "Engine_Math.h"
@@ -26,7 +25,6 @@
 
 #include <DirectXMath.h>
 
-// Headers do ImGui
 #include "imgui.h"
 #include "backends/imgui_impl_win32.h"
 #include "backends/imgui_impl_dx11.h"
@@ -200,29 +198,28 @@ public:
     Resource::Manager m_resource;
 
     Game::PlayerEntity m_player;
-    std::vector<Game::MonsterEntity> m_monsters;
-    std::vector<Game::SceneObject> m_sceneObjects;
+    uint32_t m_currentArmetId = 0;
+    uint32_t m_currentGarmentId = 0;
 
-    Resource::C3Model m_monsterIdleModel, m_monsterWalkModel;
-    Resource::C3Model m_monsterDieModel, m_monsterDeadModel;
+    struct ExpandedMonsterEntity : public Game::MonsterEntity {
+        uint32_t meshId;
+    };
+    std::vector<ExpandedMonsterEntity> m_monsters;
+    std::vector<Game::SceneObject> m_sceneObjects;
 
     Resource::C3Model m_hairIdleModel, m_hairWalkModel, m_hairJumpModel, m_hairAlertModel;
     Resource::C3Model m_hairAttackModel[3];
 
-    Resource::C3Model m_weaponIdleModel;
-    Resource::C3Model m_lweaponIdleModel;
-
-    int m_monsterTextureId = -1;
-    int m_hairTextureId = -1, m_weaponTextureId = -1, m_lweaponTextureId = -1;
-
-    std::vector<std::string> m_effectList = { "gamebow", "accession", "_p_24_wing1_open110", "blza", "fire", "ice1", "light", "water", "wind", "thunder", "fastbladen", "fbo" };
-    int m_currentEffectIndex = -1;
+    int m_hairTextureId = -1;
 
     std::unordered_map<std::string, Resource::EffectConfig> m_effectConfigs;
     std::unordered_map<uint32_t, std::string> m_c3Paths;
     std::unordered_map<uint32_t, std::string> m_ddsPaths;
     std::unordered_map<uint32_t, std::string> m_motionPaths;
+
     std::unordered_map<uint32_t, Resource::ArmorConfig> m_armorConfigs;
+    std::unordered_map<uint32_t, Resource::ArmorConfig> m_armetConfigs;
+    std::unordered_map<uint32_t, Resource::WeaponConfig> m_weaponConfigs;
 
     struct LoadedEffectPart {
         Resource::C3Model model;
@@ -273,12 +270,44 @@ public:
         int adb = 6;
     };
     std::vector<LoadedArmorPart> m_currentArmorParts;
+    std::vector<LoadedArmorPart> m_currentGarmentParts;
+    std::vector<LoadedArmorPart> m_currentArmetParts;
+
+    struct LoadedWeaponPart {
+        Resource::C3Model model;
+        int textureId = -1;
+        int asb = 5;
+        int adb = 6;
+    };
+    std::vector<LoadedWeaponPart> m_rightWeaponParts;
+    std::vector<LoadedWeaponPart> m_leftWeaponParts;
 
     struct GameItemDef {
         uint32_t id;
         std::string name;
     };
     std::vector<GameItemDef> m_gameItems;
+    std::vector<GameItemDef> m_armorsList;
+    std::vector<GameItemDef> m_garmentList;
+    std::vector<GameItemDef> m_armetList;
+    std::vector<GameItemDef> m_rightWeaponList;
+    std::vector<GameItemDef> m_leftWeaponList;
+
+    struct MonsterDef {
+        uint32_t id;
+        std::string name;
+        uint32_t meshId;
+        int maxLife;
+    };
+    std::vector<MonsterDef> m_monsterDB;
+
+    struct CachedMonster {
+        Resource::C3Model model;
+        int textureId = -1;
+        int asb = 5;
+        int adb = 6;
+    };
+    std::unordered_map<uint64_t, CachedMonster> m_monsterCache;
 
     std::unordered_map<int16_t, int> m_puzzleTextures;
     Resource::DMapData m_currentDMap;
@@ -298,52 +327,22 @@ public:
     int m_debugTexW = 0, m_debugTexH = 0;
     std::wstring m_lastDebugStr = L"";
 
-    void LoadEffect(const std::string& effectName, float mapX = -1.0f, float mapY = -1.0f, float screenOffsetX = 0.0f, float screenOffsetY = 0.0f, bool isDamage = false) {
-        m_currentEffectName = effectName;
+    void LoadMonsterDB() {
+        auto data = m_resource.GetFileData("ini\\dbmonster.txt");
+        if (data.empty()) return;
 
-        auto it = m_effectConfigs.find(effectName);
-        if (it == m_effectConfigs.end()) {
-            std::string lowerName = effectName;
-            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
-            it = m_effectConfigs.find(lowerName);
-            if (it == m_effectConfigs.end()) return;
-        }
-
-        auto& config = it->second;
-
-        ActiveEffect newActiveEffect;
-        newActiveEffect.config = config;
-        newActiveEffect.mapX = mapX;
-        newActiveEffect.mapY = mapY;
-        newActiveEffect.screenOffsetX = screenOffsetX;
-        newActiveEffect.screenOffsetY = screenOffsetY;
-
-        newActiveEffect.baseOffsetY = screenOffsetY;
-        newActiveEffect.isDamageNumber = isDamage;
-        newActiveEffect.currentLife = 0.0f;
-        newActiveEffect.maxLife = 2.0f;
-
-        if (config.delay <= 0) newActiveEffect.isWaitingDelay = false;
-
-        for (int i = 0; i < config.amount; i++) {
-            if (i >= config.parts.size()) break;
-            auto& partConfig = config.parts[i];
-            LoadedEffectPart newPart;
-
-            if (m_c3Paths.find(partConfig.effectId) != m_c3Paths.end()) {
-                std::string c3Path = m_c3Paths[partConfig.effectId];
-                newPart.model = m_resource.LoadC3Model(c3Path);
+        std::string content((char*)data.data(), data.size());
+        std::istringstream iss(content);
+        std::string line;
+        while (std::getline(iss, line)) {
+            if (line.empty()) continue;
+            std::replace(line.begin(), line.end(), ';', ' ');
+            std::istringstream ls(line);
+            MonsterDef def;
+            if (ls >> def.id >> def.name >> def.meshId >> def.maxLife) {
+                m_monsterDB.push_back(def);
             }
-            if (m_ddsPaths.find(partConfig.textureId) != m_ddsPaths.end()) {
-                std::string ddsPath = m_ddsPaths[partConfig.textureId];
-                auto texData = m_resource.GetFileData(ddsPath);
-                if (!texData.empty()) {
-                    newPart.textureId = m_renderer.LoadTextureFromMemory(texData.data(), texData.size());
-                }
-            }
-            newActiveEffect.parts.push_back(newPart);
         }
-        m_activeEffects.push_back(newActiveEffect);
     }
 
     void LoadItemTypes(const std::string& path) {
@@ -353,6 +352,13 @@ public:
         std::string content((char*)data.data(), data.size());
         std::istringstream iss(content);
         std::string line;
+
+        GameItemDef nullItem = { 0, "Nenhum" };
+        m_armorsList.push_back(nullItem);
+        m_garmentList.push_back(nullItem);
+        m_armetList.push_back(nullItem);
+        m_rightWeaponList.push_back(nullItem);
+        m_leftWeaponList.push_back(nullItem);
 
         while (std::getline(iss, line)) {
             line.erase(0, line.find_first_not_of(" \r\n\t"));
@@ -364,20 +370,29 @@ public:
             std::string name;
 
             if (ls >> id >> name) {
-                m_gameItems.push_back({ id, name });
-            }
-        }
-    }
+                GameItemDef item = { id, name };
+                m_gameItems.push_back(item);
 
-    void EquipItemByID(uint32_t itemId) {
-        if (itemId >= 130000 && itemId < 150000) {
-            ChangeArmor(m_player.modelType, itemId);
-        }
-        else if (itemId >= 400000 && itemId < 600000) {
-            ChangeWeapon(itemId, m_player.leftHandWeaponId);
-        }
-        else if (itemId >= 900000 && itemId < 1000000) {
-            ChangeWeapon(m_player.rightHandWeaponId, itemId);
+                if (id >= 130000 && id < 140000) {
+                    m_armorsList.push_back(item);
+                }
+                else if (id >= 180000 && id <= 199999) {
+                    m_garmentList.push_back(item);
+                }
+                else if ((id >= 110000 && id < 120000) || (id >= 140000 && id < 150000)) {
+                    m_armetList.push_back(item);
+                }
+                else if (id >= 400000 && id < 600000) {
+                    m_rightWeaponList.push_back(item);
+                    m_leftWeaponList.push_back(item);
+                }
+                else if (id >= 900000 && id < 1000000) {
+                    m_leftWeaponList.push_back(item);
+                }
+                else if (id >= 1050000 && id < 1060000) {
+                    m_leftWeaponList.push_back(item);
+                }
+            }
         }
     }
 
@@ -403,7 +418,6 @@ public:
         ImGuiIO& io = ImGui::GetIO(); (void)io;
         ImGui::StyleColorsDark();
 
-        // [MAGICA] Usando o novo "GetD3DDevice" para cruzar a DLL com seguranca!
         ImGui_ImplWin32_Init(m_window.m_hWnd);
         ImGui_ImplDX11_Init((ID3D11Device*)m_renderer.GetD3DDevice(), (ID3D11DeviceContext*)m_renderer.GetD3DContext());
 
@@ -417,9 +431,13 @@ public:
 
         m_ddsPaths = m_resource.ParseResIni("ini\\3dtexture.ini");
         m_motionPaths = m_resource.ParseResIni("ini\\3Dmotion.ini");
+
         m_armorConfigs = m_resource.ParseArmorIni("ini\\armor.ini");
+        m_armetConfigs = m_resource.ParseArmorIni("ini\\armet.ini");
+        m_weaponConfigs = m_resource.ParseWeaponIni("ini\\weapon.ini");
 
         LoadItemTypes("ini\\itemtype.txt");
+        LoadMonsterDB();
 
         auto loadGui = [&](const std::vector<std::string>& paths) -> int {
             for (const auto& p : paths) {
@@ -446,43 +464,14 @@ public:
             SetCursor(hCursor); ShowCursor(TRUE);
         }
 
-        m_player.armorId = 300000;
+        m_player.armorId = 0;
+        m_currentArmetId = 0;
+        m_currentGarmentId = 0;
+
         ChangeWeapon(0, 0);
         ChangeArmor(Game::ModelType::SmallFemale, m_player.armorId);
-
-        auto monsterTexData = m_resource.GetFileData("c3\\texture\\104000000.dds");
-        if (!monsterTexData.empty()) {
-            m_monsterTextureId = m_renderer.LoadTextureFromMemory(monsterTexData.data(), monsterTexData.size());
-        }
-        Resource::C3Model monsterBase = m_resource.LoadC3Model("c3\\monster\\104N\\104000000.c3");
-        Resource::C3Model monsterIdleAnim = m_resource.LoadC3Model("c3\\monster\\104N\\100.c3");
-        Resource::C3Model monsterWalkAnim = m_resource.LoadC3Model("c3\\monster\\104N\\120.c3");
-        Resource::C3Model monsterDieAnim = m_resource.LoadC3Model("c3\\monster\\104N\\330.c3");
-        Resource::C3Model monsterDeadAnim = m_resource.LoadC3Model("c3\\monster\\104N\\331.c3");
-
-        m_monsterIdleModel = monsterBase; m_monsterIdleModel.motions.clear();
-        for (size_t i = 0; i < m_monsterIdleModel.phys.size(); i++) {
-            if (monsterIdleAnim.isValid && !monsterIdleAnim.motions.empty()) m_monsterIdleModel.motions.push_back(monsterIdleAnim.motions[i % monsterIdleAnim.motions.size()]);
-            else if (monsterWalkAnim.isValid && !monsterWalkAnim.motions.empty()) m_monsterIdleModel.motions.push_back(monsterWalkAnim.motions[i % monsterWalkAnim.motions.size()]);
-        }
-
-        m_monsterWalkModel = monsterBase; m_monsterWalkModel.motions.clear();
-        for (size_t i = 0; i < m_monsterWalkModel.phys.size(); i++) {
-            if (monsterWalkAnim.isValid && !monsterWalkAnim.motions.empty()) m_monsterWalkModel.motions.push_back(monsterWalkAnim.motions[i % monsterWalkAnim.motions.size()]);
-            else if (monsterIdleAnim.isValid && !monsterIdleAnim.motions.empty()) m_monsterWalkModel.motions.push_back(monsterIdleAnim.motions[i % monsterIdleAnim.motions.size()]);
-        }
-
-        m_monsterDieModel = monsterBase; m_monsterDieModel.motions.clear();
-        for (size_t i = 0; i < m_monsterDieModel.phys.size(); i++) {
-            if (monsterDieAnim.isValid && !monsterDieAnim.motions.empty()) m_monsterDieModel.motions.push_back(monsterDieAnim.motions[i % monsterDieAnim.motions.size()]);
-            else if (monsterIdleAnim.isValid && !monsterIdleAnim.motions.empty()) m_monsterDieModel.motions.push_back(monsterIdleAnim.motions[0]);
-        }
-
-        m_monsterDeadModel = monsterBase; m_monsterDeadModel.motions.clear();
-        for (size_t i = 0; i < m_monsterDeadModel.phys.size(); i++) {
-            if (monsterDeadAnim.isValid && !monsterDeadAnim.motions.empty()) m_monsterDeadModel.motions.push_back(monsterDeadAnim.motions[i % monsterDeadAnim.motions.size()]);
-            else if (monsterIdleAnim.isValid && !monsterIdleAnim.motions.empty()) m_monsterDeadModel.motions.push_back(monsterIdleAnim.motions[0]);
-        }
+        ChangeArmet(Game::ModelType::SmallFemale, m_currentArmetId);
+        ChangeGarment(Game::ModelType::SmallFemale, m_currentGarmentId);
 
         auto gameMaps = m_resource.LoadGameMapDat("ini\\GameMap.dat");
         if (gameMaps.count(1005)) {
@@ -490,20 +479,6 @@ public:
             if (m_currentDMap.isValid) {
                 m_player.mapX = m_currentDMap.width / 2.0f;
                 m_player.mapY = m_currentDMap.height / 2.0f;
-
-                Game::MonsterEntity faisao;
-                faisao.mapX = m_player.mapX + 3.0f;
-                faisao.mapY = m_player.mapY + 3.0f;
-                faisao.startX = faisao.mapX; faisao.startY = faisao.mapY;
-
-                faisao.hp = 1000;
-                faisao.maxHp = 1000;
-                faisao.visualHp = 1000.0f;
-
-                auto [mTex, mW, mH] = Game::GenerateTextTexture(m_renderer, L"Pheasant", RGB(255, 255, 255));
-                faisao.nameTexId = mTex; faisao.nameW = mW; faisao.nameH = mH;
-
-                m_monsters.push_back(faisao);
 
                 m_currentPul = m_resource.LoadPul(m_currentDMap.puzzleFile);
                 m_tileSize = gameMaps[1005].tileSize > 0 ? gameMaps[1005].tileSize : 256;
@@ -623,6 +598,99 @@ public:
         return Resource::C3Model();
     }
 
+    CachedMonster& GetMonsterRender(uint32_t meshId, uint32_t actionId) {
+        uint64_t key = ((uint64_t)meshId << 32) | actionId;
+        if (m_monsterCache.find(key) != m_monsterCache.end()) {
+            return m_monsterCache[key];
+        }
+
+        CachedMonster render;
+        uint32_t armorId = meshId * 1000000;
+
+        if (m_armorConfigs.find(armorId) != m_armorConfigs.end()) {
+            auto& armCfg = m_armorConfigs[armorId];
+            if (!armCfg.parts.empty()) {
+                auto& pCfg = armCfg.parts[0];
+                render.asb = pCfg.asb;
+                render.adb = pCfg.adb;
+
+                if (m_c3Paths.count(pCfg.mesh)) {
+                    render.model = m_resource.LoadC3Model(m_c3Paths[pCfg.mesh]);
+                }
+                if (m_ddsPaths.count(pCfg.texture)) {
+                    auto texData = m_resource.GetFileData(m_ddsPaths[pCfg.texture]);
+                    if (!texData.empty()) {
+                        render.textureId = m_renderer.LoadTextureFromMemory(texData.data(), texData.size());
+                    }
+                }
+            }
+        }
+
+        uint32_t motionId = armorId + actionId;
+        if (m_motionPaths.count(motionId)) {
+            Resource::C3Model animModel = m_resource.LoadC3Model(m_motionPaths[motionId]);
+            ApplyAnim(render.model, animModel);
+        }
+        else {
+            uint32_t fallbackIdle = armorId + 100;
+            if (m_motionPaths.count(fallbackIdle)) {
+                Resource::C3Model animModel = m_resource.LoadC3Model(m_motionPaths[fallbackIdle]);
+                ApplyAnim(render.model, animModel);
+            }
+        }
+
+        m_monsterCache[key] = render;
+        return m_monsterCache[key];
+    }
+
+    void LoadEffect(const std::string& effectName, float mapX = -1.0f, float mapY = -1.0f, float screenOffsetX = 0.0f, float screenOffsetY = 0.0f, bool isDamage = false) {
+        m_currentEffectName = effectName;
+
+        auto it = m_effectConfigs.find(effectName);
+        if (it == m_effectConfigs.end()) {
+            std::string lowerName = effectName;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+            it = m_effectConfigs.find(lowerName);
+            if (it == m_effectConfigs.end()) return;
+        }
+
+        auto& config = it->second;
+
+        ActiveEffect newActiveEffect;
+        newActiveEffect.config = config;
+        newActiveEffect.mapX = mapX;
+        newActiveEffect.mapY = mapY;
+        newActiveEffect.screenOffsetX = screenOffsetX;
+        newActiveEffect.screenOffsetY = screenOffsetY;
+
+        newActiveEffect.baseOffsetY = screenOffsetY;
+        newActiveEffect.isDamageNumber = isDamage;
+        newActiveEffect.currentLife = 0.0f;
+        newActiveEffect.maxLife = 2.0f;
+
+        if (config.delay <= 0) newActiveEffect.isWaitingDelay = false;
+
+        for (int i = 0; i < config.amount; i++) {
+            if (i >= config.parts.size()) break;
+            auto& partConfig = config.parts[i];
+            LoadedEffectPart newPart;
+
+            if (m_c3Paths.find(partConfig.effectId) != m_c3Paths.end()) {
+                std::string c3Path = m_c3Paths[partConfig.effectId];
+                newPart.model = m_resource.LoadC3Model(c3Path);
+            }
+            if (m_ddsPaths.find(partConfig.textureId) != m_ddsPaths.end()) {
+                std::string ddsPath = m_ddsPaths[partConfig.textureId];
+                auto texData = m_resource.GetFileData(ddsPath);
+                if (!texData.empty()) {
+                    newPart.textureId = m_renderer.LoadTextureFromMemory(texData.data(), texData.size());
+                }
+            }
+            newActiveEffect.parts.push_back(newPart);
+        }
+        m_activeEffects.push_back(newActiveEffect);
+    }
+
     void ChangeWing(const std::string& effectName) {
         if (effectName.empty() || effectName == "Nenhum") {
             m_hasWing = false;
@@ -667,37 +735,231 @@ public:
         }
     }
 
+    void ChangeGarment(Game::ModelType type, uint32_t garmentId) {
+        m_currentGarmentId = garmentId;
+        for (auto& p : m_currentGarmentParts) { if (p.textureId != -1) m_renderer.DeleteTexture(p.textureId); }
+        m_currentGarmentParts.clear();
+
+        if (garmentId == 0) {
+            // Reestabelece os ossos originais da armadura base
+            ChangeArmor(m_player.modelType, m_player.armorId);
+            return;
+        }
+
+        Resource::C3Model animIdle = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::StandBy);
+        Resource::C3Model animWalkL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunL);
+        Resource::C3Model animWalkR = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunR);
+        Resource::C3Model animJump = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Jump);
+        Resource::C3Model animAlert = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Alert);
+        if (!animAlert.isValid || animAlert.motions.empty()) animAlert = animIdle;
+        Resource::C3Model animAttack1 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_401);
+        Resource::C3Model animAttack2 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_402);
+        Resource::C3Model animAttack3 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_403);
+        if (!animAttack2.isValid || animAttack2.motions.empty()) animAttack2 = animAttack1;
+        if (!animAttack3.isValid || animAttack3.motions.empty()) animAttack3 = animAttack1;
+
+        uint32_t modelPrefix = static_cast<uint32_t>(type);
+        uint32_t baseGarmentId = (modelPrefix * 1000000) + garmentId;
+        uint32_t finalGarmentId = baseGarmentId;
+
+        if (m_armorConfigs.find(finalGarmentId) == m_armorConfigs.end()) {
+            uint32_t fallback0 = (baseGarmentId / 10) * 10;
+            if (m_armorConfigs.find(fallback0) != m_armorConfigs.end()) {
+                finalGarmentId = fallback0;
+            }
+            else {
+                uint32_t fallback5 = fallback0 + 5;
+                if (m_armorConfigs.find(fallback5) != m_armorConfigs.end()) {
+                    finalGarmentId = fallback5;
+                }
+                else {
+                    return;
+                }
+            }
+        }
+
+        auto& armorCfg = m_armorConfigs[finalGarmentId];
+
+        for (int i = 0; i < armorCfg.partCount; i++) {
+            if (i >= armorCfg.parts.size()) break;
+            auto& pCfg = armorCfg.parts[i];
+
+            LoadedArmorPart newPart;
+            newPart.asb = pCfg.asb;
+            newPart.adb = pCfg.adb;
+
+            if (m_c3Paths.find(pCfg.mesh) != m_c3Paths.end()) {
+                std::string c3Path = m_c3Paths[pCfg.mesh];
+                Resource::C3Model baseModel = m_resource.LoadC3Model(c3Path);
+
+                if (baseModel.isValid) {
+                    if (m_currentGarmentParts.empty()) {
+                        m_rightHandPhy = -1; m_leftHandPhy = -1; m_backPhy = -1;
+                        for (size_t k = 0; k < baseModel.phys.size(); k++) {
+                            std::string name = baseModel.phys[k].name;
+                            std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+                            if (name == "point02" || name == "v_r_weapon" || name == "rweapon") m_rightHandPhy = (int)k;
+                            else if (name == "point01" || name == "v_l_weapon" || name == "lweapon") m_leftHandPhy = (int)k;
+                            else if (name == "point04" || name == "wing") m_backPhy = (int)k;
+                        }
+                    }
+
+                    newPart.idleModel = baseModel; ApplyAnim(newPart.idleModel, animIdle);
+                    newPart.walkModel = baseModel; ApplyWalkAnim(newPart.walkModel, animWalkL, animWalkR);
+                    newPart.jumpModel = baseModel; ApplyAnim(newPart.jumpModel, animJump);
+                    newPart.alertModel = baseModel; ApplyAnim(newPart.alertModel, animAlert);
+                    newPart.attackModel[0] = baseModel; ApplyAnim(newPart.attackModel[0], animAttack1);
+                    newPart.attackModel[1] = baseModel; ApplyAnim(newPart.attackModel[1], animAttack2);
+                    newPart.attackModel[2] = baseModel; ApplyAnim(newPart.attackModel[2], animAttack3);
+                }
+            }
+            if (m_ddsPaths.find(pCfg.texture) != m_ddsPaths.end()) {
+                std::string ddsPath = m_ddsPaths[pCfg.texture];
+                auto texData = m_resource.GetFileData(ddsPath);
+                if (!texData.empty()) {
+                    newPart.textureId = m_renderer.LoadTextureFromMemory(texData.data(), texData.size());
+                }
+            }
+            m_currentGarmentParts.push_back(newPart);
+        }
+    }
+
+    void ChangeArmet(Game::ModelType type, uint32_t armetId) {
+        m_currentArmetId = armetId;
+
+        Resource::C3Model animIdle = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::StandBy);
+        Resource::C3Model animWalkL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunL);
+        Resource::C3Model animWalkR = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunR);
+        Resource::C3Model animJump = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Jump);
+        Resource::C3Model animAlert = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Alert);
+        if (!animAlert.isValid || animAlert.motions.empty()) animAlert = animIdle;
+        Resource::C3Model animAttack1 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_401);
+        Resource::C3Model animAttack2 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_402);
+        Resource::C3Model animAttack3 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_403);
+        if (!animAttack2.isValid || animAttack2.motions.empty()) animAttack2 = animAttack1;
+        if (!animAttack3.isValid || animAttack3.motions.empty()) animAttack3 = animAttack1;
+
+        if (armetId == 0) {
+            for (auto& p : m_currentArmetParts) {
+                if (p.textureId != -1) m_renderer.DeleteTexture(p.textureId);
+            }
+            m_currentArmetParts.clear();
+            return;
+        }
+
+        uint32_t modelPrefix = static_cast<uint32_t>(type);
+        uint32_t baseArmetId = (modelPrefix * 1000000) + armetId;
+        uint32_t finalArmetId = baseArmetId;
+
+        if (m_armetConfigs.find(finalArmetId) == m_armetConfigs.end()) {
+            uint32_t fallback0 = (baseArmetId / 10) * 10;
+            if (m_armetConfigs.find(fallback0) != m_armetConfigs.end()) {
+                finalArmetId = fallback0;
+            }
+            else {
+                uint32_t fallback5 = fallback0 + 5;
+                if (m_armetConfigs.find(fallback5) != m_armetConfigs.end()) {
+                    finalArmetId = fallback5;
+                }
+                else {
+                    finalArmetId = 0;
+                }
+            }
+        }
+
+        for (auto& p : m_currentArmetParts) {
+            if (p.textureId != -1) m_renderer.DeleteTexture(p.textureId);
+        }
+        m_currentArmetParts.clear();
+
+        if (finalArmetId == 0) return;
+
+        auto& armetCfg = m_armetConfigs[finalArmetId];
+        for (int i = 0; i < armetCfg.partCount; i++) {
+            if (i >= armetCfg.parts.size()) break;
+            auto& pCfg = armetCfg.parts[i];
+
+            LoadedArmorPart newPart;
+            newPart.asb = pCfg.asb;
+            newPart.adb = pCfg.adb;
+
+            if (m_c3Paths.find(pCfg.mesh) != m_c3Paths.end()) {
+                std::string c3Path = m_c3Paths[pCfg.mesh];
+                Resource::C3Model baseModel = m_resource.LoadC3Model(c3Path);
+
+                if (baseModel.isValid) {
+                    newPart.idleModel = baseModel; ApplyAnim(newPart.idleModel, animIdle);
+                    newPart.walkModel = baseModel; ApplyWalkAnim(newPart.walkModel, animWalkL, animWalkR);
+                    newPart.jumpModel = baseModel; ApplyAnim(newPart.jumpModel, animJump);
+                    newPart.alertModel = baseModel; ApplyAnim(newPart.alertModel, animAlert);
+                    newPart.attackModel[0] = baseModel; ApplyAnim(newPart.attackModel[0], animAttack1);
+                    newPart.attackModel[1] = baseModel; ApplyAnim(newPart.attackModel[1], animAttack2);
+                    newPart.attackModel[2] = baseModel; ApplyAnim(newPart.attackModel[2], animAttack3);
+                }
+            }
+            if (m_ddsPaths.find(pCfg.texture) != m_ddsPaths.end()) {
+                std::string ddsPath = m_ddsPaths[pCfg.texture];
+                auto texData = m_resource.GetFileData(ddsPath);
+                if (!texData.empty()) {
+                    newPart.textureId = m_renderer.LoadTextureFromMemory(texData.data(), texData.size());
+                }
+            }
+            m_currentArmetParts.push_back(newPart);
+        }
+    }
+
     void ChangeWeapon(uint32_t rightId, uint32_t leftId) {
         m_player.rightHandWeaponId = rightId;
         m_player.leftHandWeaponId = leftId;
 
-        auto loadWeaponPart = [&](uint32_t wid, Resource::C3Model& outModel, int& outTexId) {
-            outTexId = -1; outModel = Resource::C3Model();
+        auto loadWeaponParts = [&](uint32_t wid, std::vector<LoadedWeaponPart>& outParts) {
+            for (auto& p : outParts) if (p.textureId != -1) m_renderer.DeleteTexture(p.textureId);
+            outParts.clear();
             if (wid == 0) return;
 
-            if (m_c3Paths.find(wid) != m_c3Paths.end()) {
-                outModel = m_resource.LoadC3Model(m_c3Paths[wid]);
-            }
+            if (m_weaponConfigs.find(wid) != m_weaponConfigs.end()) {
+                auto& wCfg = m_weaponConfigs[wid];
+                for (auto& pCfg : wCfg.parts) {
+                    LoadedWeaponPart newPart;
+                    newPart.asb = pCfg.asb;
+                    newPart.adb = pCfg.adb;
 
-            uint32_t texIdsToTry[] = { wid, wid + 9, wid + 8, wid + 5, wid + 1, wid + 2 };
-            for (uint32_t tid : texIdsToTry) {
-                if (m_ddsPaths.find(tid) != m_ddsPaths.end()) {
-                    auto texData = m_resource.GetFileData(m_ddsPaths[tid]);
-                    if (!texData.empty()) {
-                        outTexId = m_renderer.LoadTextureFromMemory(texData.data(), texData.size());
-                        break;
+                    if (m_c3Paths.count(pCfg.mesh)) {
+                        newPart.model = m_resource.LoadC3Model(m_c3Paths[pCfg.mesh]);
+                    }
+                    if (m_ddsPaths.count(pCfg.texture)) {
+                        auto texData = m_resource.GetFileData(m_ddsPaths[pCfg.texture]);
+                        if (!texData.empty()) {
+                            newPart.textureId = m_renderer.LoadTextureFromMemory(texData.data(), texData.size());
+                        }
+                    }
+                    outParts.push_back(newPart);
+                }
+            }
+            else {
+                LoadedWeaponPart fallbackPart;
+                if (m_c3Paths.find(wid) != m_c3Paths.end()) fallbackPart.model = m_resource.LoadC3Model(m_c3Paths[wid]);
+
+                uint32_t texIdsToTry[] = { wid, wid + 9, wid + 8, wid + 5, wid + 1, wid + 2 };
+                for (uint32_t tid : texIdsToTry) {
+                    if (m_ddsPaths.find(tid) != m_ddsPaths.end()) {
+                        auto texData = m_resource.GetFileData(m_ddsPaths[tid]);
+                        if (!texData.empty()) {
+                            fallbackPart.textureId = m_renderer.LoadTextureFromMemory(texData.data(), texData.size());
+                            break;
+                        }
                     }
                 }
+                outParts.push_back(fallbackPart);
             }
             };
 
-        if (m_weaponTextureId != -1) m_renderer.DeleteTexture(m_weaponTextureId);
-        loadWeaponPart(rightId, m_weaponIdleModel, m_weaponTextureId);
-
-        if (m_lweaponTextureId != -1) m_renderer.DeleteTexture(m_lweaponTextureId);
-        loadWeaponPart(leftId, m_lweaponIdleModel, m_lweaponTextureId);
+        loadWeaponParts(rightId, m_rightWeaponParts);
+        loadWeaponParts(leftId, m_leftWeaponParts);
 
         ChangeArmor(m_player.modelType, m_player.armorId);
+        ChangeArmet(m_player.modelType, m_currentArmetId);
+        ChangeGarment(m_player.modelType, m_currentGarmentId);
     }
 
     void ChangeArmor(Game::ModelType type, uint32_t armorId) {
@@ -728,9 +990,24 @@ public:
         ApplyAnim(m_hairAttackModel[1], animAttack2);
         ApplyAnim(m_hairAttackModel[2], animAttack3);
 
-        uint32_t finalArmorId = (static_cast<uint32_t>(type) * 1000000) + armorId;
+        uint32_t modelPrefix = static_cast<uint32_t>(type);
+        uint32_t baseArmorId = (modelPrefix * 1000000) + armorId;
+        uint32_t finalArmorId = baseArmorId;
+
         if (m_armorConfigs.find(finalArmorId) == m_armorConfigs.end()) {
-            finalArmorId = (static_cast<uint32_t>(type) * 1000000);
+            uint32_t fallback0 = (baseArmorId / 10) * 10;
+            if (m_armorConfigs.find(fallback0) != m_armorConfigs.end()) {
+                finalArmorId = fallback0;
+            }
+            else {
+                uint32_t fallback5 = fallback0 + 5;
+                if (m_armorConfigs.find(fallback5) != m_armorConfigs.end()) {
+                    finalArmorId = fallback5;
+                }
+                else {
+                    finalArmorId = (modelPrefix * 1000000);
+                }
+            }
         }
 
         auto& armorCfg = m_armorConfigs[finalArmorId];
@@ -753,7 +1030,8 @@ public:
                 Resource::C3Model baseModel = m_resource.LoadC3Model(c3Path);
 
                 if (baseModel.isValid) {
-                    if (m_currentArmorParts.empty()) {
+                    // Armazena os ossos pela armadura
+                    if (m_currentArmorParts.empty() && m_currentGarmentParts.empty()) {
                         m_rightHandPhy = -1; m_leftHandPhy = -1; m_backPhy = -1;
                         for (size_t k = 0; k < baseModel.phys.size(); k++) {
                             std::string name = baseModel.phys[k].name;
@@ -787,47 +1065,143 @@ public:
         }
     }
 
+    void EquipItemByID(uint32_t itemId) {
+        if (itemId >= 130000 && itemId < 140000) {
+            ChangeArmor(m_player.modelType, itemId);
+        }
+        else if (itemId >= 180000 && itemId <= 199999) {
+            ChangeGarment(m_player.modelType, itemId);
+        }
+        else if ((itemId >= 110000 && itemId < 120000) || (itemId >= 140000 && itemId < 150000)) {
+            ChangeArmet(m_player.modelType, itemId);
+        }
+        else if (itemId >= 400000 && itemId < 600000) {
+            ChangeWeapon(itemId, m_player.leftHandWeaponId);
+        }
+        else if (itemId >= 900000 && itemId < 1000000) {
+            ChangeWeapon(m_player.rightHandWeaponId, itemId);
+        }
+        else if (itemId >= 1050000 && itemId < 1060000) {
+            ChangeWeapon(m_player.rightHandWeaponId, itemId);
+        }
+    }
+
     void DrawImGuiPanel() {
         ImGui::Begin("Painel de Controle KayanK");
 
         if (ImGui::CollapsingHeader("Personagem (Modelo Base)", ImGuiTreeNodeFlags_DefaultOpen)) {
-            int currentModel = (int)m_player.modelType;
-            bool modelChanged = false;
+            const char* sexNames[] = { "Mulher Pequena", "Mulher Alta", "Homem Pequeno", "Homem Alto" };
+            int currentSex = (int)m_player.modelType - 1;
+            if (currentSex < 0 || currentSex > 3) currentSex = 0;
 
-            if (ImGui::RadioButton("Mulher Pequena", &currentModel, 1)) modelChanged = true;
-            ImGui::SameLine();
-            if (ImGui::RadioButton("Mulher Alta", &currentModel, 2)) modelChanged = true;
-
-            if (ImGui::RadioButton("Homem Pequeno", &currentModel, 3)) modelChanged = true;
-            ImGui::SameLine();
-            if (ImGui::RadioButton("Homem Alto", &currentModel, 4)) modelChanged = true;
-
-            if (modelChanged) {
-                ChangeArmor((Game::ModelType)currentModel, m_player.armorId);
+            if (ImGui::Combo("Corpo", &currentSex, sexNames, 4)) {
+                ChangeArmor((Game::ModelType)(currentSex + 1), m_player.armorId);
+                ChangeArmet((Game::ModelType)(currentSex + 1), m_currentArmetId);
+                ChangeGarment((Game::ModelType)(currentSex + 1), m_currentGarmentId);
             }
         }
 
-        if (ImGui::CollapsingHeader("Equipamentos (ItemType.txt)")) {
-            static int item_current_idx = 0;
-            std::string previewValue = m_gameItems.empty() ? "Nenhum Item Carregado" : m_gameItems[item_current_idx].name;
-            if (ImGui::BeginCombo("Lista de Itens", previewValue.c_str())) {
-                for (int n = 0; n < m_gameItems.size(); n++) {
-                    const bool is_selected = (item_current_idx == n);
-                    std::string displayText = std::to_string(m_gameItems[n].id) + " - " + m_gameItems[n].name;
-                    if (ImGui::Selectable(displayText.c_str(), is_selected)) {
-                        item_current_idx = n;
-                        EquipItemByID(m_gameItems[n].id);
+        if (ImGui::CollapsingHeader("Equipamentos (ItemType.txt)", ImGuiTreeNodeFlags_DefaultOpen)) {
+
+            static int armet_idx = 0;
+            if (!m_armetList.empty()) {
+                if (ImGui::BeginCombo("Capacete (Armet)", m_armetList[armet_idx].name.c_str())) {
+                    for (int n = 0; n < m_armetList.size(); n++) {
+                        const bool is_selected = (armet_idx == n);
+                        std::string displayText = std::to_string(m_armetList[n].id) + " - " + m_armetList[n].name;
+                        if (ImGui::Selectable(displayText.c_str(), is_selected)) {
+                            armet_idx = n;
+                            EquipItemByID(m_armetList[n].id);
+                        }
+                        if (is_selected) ImGui::SetItemDefaultFocus();
                     }
-                    if (is_selected) ImGui::SetItemDefaultFocus();
+                    ImGui::EndCombo();
                 }
-                ImGui::EndCombo();
+            }
+
+            static int armor_idx = 0;
+            if (!m_armorsList.empty()) {
+                if (ImGui::BeginCombo("Armadura", m_armorsList[armor_idx].name.c_str())) {
+                    for (int n = 0; n < m_armorsList.size(); n++) {
+                        const bool is_selected = (armor_idx == n);
+                        std::string displayText = std::to_string(m_armorsList[n].id) + " - " + m_armorsList[n].name;
+                        if (ImGui::Selectable(displayText.c_str(), is_selected)) {
+                            armor_idx = n;
+                            EquipItemByID(m_armorsList[n].id);
+                        }
+                        if (is_selected) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+
+            static int garment_idx = 0;
+            if (!m_garmentList.empty()) {
+                if (ImGui::BeginCombo("Garment (Fantasia)", m_garmentList[garment_idx].name.c_str())) {
+                    for (int n = 0; n < m_garmentList.size(); n++) {
+                        const bool is_selected = (garment_idx == n);
+                        std::string displayText = std::to_string(m_garmentList[n].id) + " - " + m_garmentList[n].name;
+                        if (ImGui::Selectable(displayText.c_str(), is_selected)) {
+                            garment_idx = n;
+                            EquipItemByID(m_garmentList[n].id);
+                        }
+                        if (is_selected) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+
+            static int right_idx = 0;
+            if (!m_rightWeaponList.empty()) {
+                if (ImGui::BeginCombo("Mão Direita (R)", m_rightWeaponList[right_idx].name.c_str())) {
+                    for (int n = 0; n < m_rightWeaponList.size(); n++) {
+                        const bool is_selected = (right_idx == n);
+                        std::string displayText = std::to_string(m_rightWeaponList[n].id) + " - " + m_rightWeaponList[n].name;
+                        if (ImGui::Selectable(displayText.c_str(), is_selected)) {
+                            right_idx = n;
+                            EquipItemByID(m_rightWeaponList[n].id);
+                        }
+                        if (is_selected) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+
+            static int left_idx = 0;
+            if (!m_leftWeaponList.empty()) {
+                if (ImGui::BeginCombo("Mão Esquerda (L)", m_leftWeaponList[left_idx].name.c_str())) {
+
+                    bool isRightBow = (m_player.rightHandWeaponId / 1000 == 500);
+
+                    for (int n = 0; n < m_leftWeaponList.size(); n++) {
+                        uint32_t lId = m_leftWeaponList[n].id;
+                        uint32_t lPrefix = lId / 100000;
+                        uint32_t lArrowPrefix = lId / 10000;
+
+                        bool show = true;
+                        if (isRightBow) {
+                            if (lId != 0 && lArrowPrefix != 105) show = false;
+                        }
+                        else {
+                            if (lArrowPrefix == 105) show = false;
+                        }
+
+                        if (show) {
+                            const bool is_selected = (left_idx == n);
+                            std::string displayText = std::to_string(lId) + " - " + m_leftWeaponList[n].name;
+                            if (ImGui::Selectable(displayText.c_str(), is_selected)) {
+                                left_idx = n;
+                                ChangeWeapon(m_player.rightHandWeaponId, lId);
+                            }
+                            if (is_selected) ImGui::SetItemDefaultFocus();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
             }
         }
 
         if (ImGui::CollapsingHeader("Asas e Acessorios")) {
-            if (ImGui::Button("Remover Asa Atual", ImVec2(-1.0f, 0.0f))) {
-                ChangeWing("Nenhum");
-            }
             static std::vector<std::string> wingNames;
             if (wingNames.empty()) {
                 for (auto& pair : m_effectConfigs) {
@@ -839,12 +1213,20 @@ public:
                 }
             }
             static int wing_idx = 0;
-            if (ImGui::BeginCombo("Escolher Nova Asa", wingNames.empty() ? "Carregando..." : wingNames[wing_idx].c_str())) {
+
+            if (ImGui::Button("Remover Asa Atual", ImVec2(150.0f, 30.0f))) {
+                ChangeWing("Nenhum");
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Equipar Asa Selecionada", ImVec2(150.0f, 30.0f))) {
+                if (!wingNames.empty()) ChangeWing(wingNames[wing_idx]);
+            }
+
+            if (ImGui::BeginCombo("Lista de Asas", wingNames.empty() ? "Carregando..." : wingNames[wing_idx].c_str())) {
                 for (int n = 0; n < wingNames.size(); n++) {
                     const bool is_selected = (wing_idx == n);
                     if (ImGui::Selectable(wingNames[n].c_str(), is_selected)) {
                         wing_idx = n;
-                        ChangeWing(wingNames[n]);
                     }
                     if (is_selected) ImGui::SetItemDefaultFocus();
                 }
@@ -859,21 +1241,88 @@ public:
                     allEffects.push_back(pair.first);
                 }
             }
+
+            static char searchBuffer[128] = "";
+            ImGui::InputText("Buscar", searchBuffer, IM_ARRAYSIZE(searchBuffer));
+
             static int fx_idx = 0;
-            if (ImGui::BeginCombo("Banco de Dados de Efeitos", allEffects.empty() ? "Nenhum" : allEffects[fx_idx].c_str())) {
+            std::string previewName = "Nenhum";
+            if (!allEffects.empty() && fx_idx >= 0 && fx_idx < allEffects.size()) {
+                previewName = allEffects[fx_idx];
+            }
+
+            if (ImGui::BeginCombo("Banco de Dados de Efeitos", previewName.c_str())) {
                 for (int n = 0; n < allEffects.size(); n++) {
-                    const bool is_selected = (fx_idx == n);
-                    if (ImGui::Selectable(allEffects[n].c_str(), is_selected)) {
-                        fx_idx = n;
+                    std::string effectName = allEffects[n];
+                    std::string searchStr = searchBuffer;
+
+                    std::string lowerEffect = effectName;
+                    std::string lowerSearch = searchStr;
+                    std::transform(lowerEffect.begin(), lowerEffect.end(), lowerEffect.begin(), ::tolower);
+                    std::transform(lowerSearch.begin(), lowerSearch.end(), lowerSearch.begin(), ::tolower);
+
+                    if (searchStr.empty() || lowerEffect.find(lowerSearch) != std::string::npos) {
+                        const bool is_selected = (fx_idx == n);
+                        if (ImGui::Selectable(effectName.c_str(), is_selected)) {
+                            fx_idx = n;
+                        }
+                        if (is_selected) ImGui::SetItemDefaultFocus();
                     }
-                    if (is_selected) ImGui::SetItemDefaultFocus();
                 }
                 ImGui::EndCombo();
             }
+
             if (ImGui::Button("Disparar Magia na Frente!", ImVec2(-1.0f, 40.0f))) {
-                if (!allEffects.empty()) {
+                if (!allEffects.empty() && fx_idx >= 0 && fx_idx < allEffects.size()) {
                     LoadEffect(allEffects[fx_idx], m_player.mapX + 2.0f, m_player.mapY + 2.0f);
                 }
+            }
+        }
+
+        if (ImGui::CollapsingHeader("Monstros (Spawn)")) {
+            static int monster_idx = 0;
+
+            if (!m_monsterDB.empty()) {
+                std::string currentMobPreview = std::to_string(m_monsterDB[monster_idx].id) + " - " + m_monsterDB[monster_idx].name;
+
+                if (ImGui::BeginCombo("Selecione o Monstro", currentMobPreview.c_str())) {
+                    for (int n = 0; n < m_monsterDB.size(); n++) {
+                        const bool is_selected = (monster_idx == n);
+                        std::string displayText = std::to_string(m_monsterDB[n].id) + " - " + m_monsterDB[n].name;
+
+                        if (ImGui::Selectable(displayText.c_str(), is_selected)) {
+                            monster_idx = n;
+                        }
+                        if (is_selected) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+
+                if (ImGui::Button("Invocar Monstro (Summon)", ImVec2(-1.0f, 40.0f))) {
+                    ExpandedMonsterEntity newMob;
+
+                    newMob.mapX = m_player.mapX + (float)((rand() % 5) - 2);
+                    newMob.mapY = m_player.mapY + (float)((rand() % 5) - 2);
+                    newMob.startX = newMob.mapX;
+                    newMob.startY = newMob.mapY;
+
+                    newMob.meshId = m_monsterDB[monster_idx].meshId;
+                    newMob.maxHp = m_monsterDB[monster_idx].maxLife;
+                    newMob.hp = newMob.maxHp;
+                    newMob.visualHp = (float)newMob.maxHp;
+                    newMob.currentAction = 100;
+
+                    std::wstring wideName(m_monsterDB[monster_idx].name.begin(), m_monsterDB[monster_idx].name.end());
+                    auto [mTex, mW, mH] = Game::GenerateTextTexture(m_renderer, wideName, RGB(255, 255, 255));
+                    newMob.nameTexId = mTex;
+                    newMob.nameW = mW;
+                    newMob.nameH = mH;
+
+                    m_monsters.push_back(newMob);
+                }
+            }
+            else {
+                ImGui::Text("Banco de Dados dbmonster.txt nao carregado.");
             }
         }
 
@@ -899,96 +1348,94 @@ public:
 
         ImGuiIO& io = ImGui::GetIO();
 
-        if (hasFocus && !io.WantCaptureMouse) {
-            POINT pt; GetCursorPos(&pt); ScreenToClient(m_window.m_hWnd, &pt);
-            m_mouseX = pt.x; m_mouseY = pt.y;
+        POINT pt; GetCursorPos(&pt); ScreenToClient(m_window.m_hWnd, &pt);
+        m_mouseX = pt.x; m_mouseY = pt.y;
 
-            bool isMouseInside = (pt.x >= 0 && pt.x < m_window.m_width && pt.y >= 0 && pt.y < m_window.m_height);
-            static bool s_prevLeftDown = false;
-            bool currentLeftDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-            bool leftClicked = currentLeftDown && !s_prevLeftDown;
-            s_prevLeftDown = currentLeftDown;
+        bool isMouseInside = (pt.x >= 0 && pt.x < m_window.m_width && pt.y >= 0 && pt.y < m_window.m_height);
+        static bool s_prevLeftDown = false;
+        bool currentLeftDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+        bool leftClicked = currentLeftDown && !s_prevLeftDown;
+        s_prevLeftDown = currentLeftDown;
 
-            if (m_player.isAlert && !m_player.isAttacking) {
-                m_player.alertTimer -= deltaTime;
-                if (m_player.alertTimer <= 0.0f) {
+        if (m_player.isAlert && !m_player.isAttacking) {
+            m_player.alertTimer -= deltaTime;
+            if (m_player.alertTimer <= 0.0f) {
+                m_player.isAlert = false;
+                m_player.alertTimer = 0.0f;
+            }
+        }
+
+        if (hasFocus && isMouseInside && !io.WantCaptureMouse) {
+            if (m_currentDMap.isValid && m_currentPul.isValid) {
+                int puzzlePixelWidth = m_currentPul.horizontalTiles * m_tileSize;
+                int puzzlePixelHeight = m_currentPul.verticalTiles * m_tileSize;
+                Engine::IsometricCoordinateSystem coordSystem(puzzlePixelWidth, puzzlePixelHeight, m_currentDMap.height);
+
+                float cx = m_window.m_width / 2.0f;
+                float cy = m_window.m_height / 2.0f;
+                float unzoomedMouseX = cx + (pt.x - cx) / m_zoom;
+                float unzoomedMouseY = cy + (pt.y - cy) / m_zoom;
+
+                int clickedMonsterIdx = -1;
+                for (size_t i = 0; i < m_monsters.size(); i++) {
+                    auto [mWorldX, mWorldY] = coordSystem.MapToScreen(m_monsters[i].mapX, m_monsters[i].mapY);
+                    float drawX = mWorldX - m_cameraX;
+                    float drawY = mWorldY - m_cameraY;
+                    float zX = cx + (drawX - cx) * m_zoom;
+                    float zY = cy + (drawY - cy) * m_zoom;
+
+                    float mobW = 80.0f * m_zoom;
+                    float mobH = 130.0f * m_zoom;
+                    float mobLeft = zX - (mobW / 2.0f);
+                    float mobRight = zX + (mobW / 2.0f);
+                    float mobTop = zY - mobH;
+                    float mobBottom = zY + (20.0f * m_zoom);
+
+                    if (pt.x >= mobLeft && pt.x <= mobRight && pt.y >= mobTop && pt.y <= mobBottom) {
+                        if (!m_monsters[i].isDead) {
+                            clickedMonsterIdx = (int)i;
+                            break;
+                        }
+                    }
+                }
+
+                auto [targetX, targetY] = coordSystem.ScreenToMap(unzoomedMouseX, unzoomedMouseY, m_cameraX, m_cameraY);
+
+                if (leftClicked && clickedMonsterIdx != -1) {
+                    m_player.targetMonsterIndex = clickedMonsterIdx;
+                    m_player.isMoving = false;
+                    m_player.hasQueuedAction = false;
+                    m_player.isChasing = true;
+
                     m_player.isAlert = false;
                     m_player.alertTimer = 0.0f;
                 }
-            }
+                else if (currentLeftDown && clickedMonsterIdx == -1) {
+                    m_player.targetMonsterIndex = -1;
+                    m_player.isAttacking = false;
+                    m_player.isChasing = false;
 
-            if (isMouseInside) {
-                if (m_currentDMap.isValid && m_currentPul.isValid) {
-                    int puzzlePixelWidth = m_currentPul.horizontalTiles * m_tileSize;
-                    int puzzlePixelHeight = m_currentPul.verticalTiles * m_tileSize;
-                    Engine::IsometricCoordinateSystem coordSystem(puzzlePixelWidth, puzzlePixelHeight, m_currentDMap.height);
+                    float dx = targetX - m_player.mapX;
+                    float dy = targetY - m_player.mapY;
+                    float dist = std::sqrt(dx * dx + dy * dy);
 
-                    float cx = m_window.m_width / 2.0f;
-                    float cy = m_window.m_height / 2.0f;
-                    float unzoomedMouseX = cx + (pt.x - cx) / m_zoom;
-                    float unzoomedMouseY = cy + (pt.y - cy) / m_zoom;
+                    if (!m_player.isJumping) {
+                        if (dist > 0.05f) m_player.facingAngle = -(std::atan2(dy, dx) - 0.78539f);
 
-                    int clickedMonsterIdx = -1;
-                    for (size_t i = 0; i < m_monsters.size(); i++) {
-                        auto [mWorldX, mWorldY] = coordSystem.MapToScreen(m_monsters[i].mapX, m_monsters[i].mapY);
-                        float drawX = mWorldX - m_cameraX;
-                        float drawY = mWorldY - m_cameraY;
-                        float zX = cx + (drawX - cx) * m_zoom;
-                        float zY = cy + (drawY - cy) * m_zoom;
-
-                        float mobW = 80.0f * m_zoom;
-                        float mobH = 130.0f * m_zoom;
-                        float mobLeft = zX - (mobW / 2.0f);
-                        float mobRight = zX + (mobW / 2.0f);
-                        float mobTop = zY - mobH;
-                        float mobBottom = zY + (20.0f * m_zoom);
-
-                        if (pt.x >= mobLeft && pt.x <= mobRight && pt.y >= mobTop && pt.y <= mobBottom) {
-                            if (!m_monsters[i].isDead) {
-                                clickedMonsterIdx = (int)i;
-                                break;
-                            }
+                        if (GetAsyncKeyState(VK_CONTROL) & 0x8000) {
+                            m_player.isJumping = true; m_player.isMoving = false;
+                            m_player.jumpTimer = 0.0f; m_player.startMapX = m_player.mapX; m_player.startMapY = m_player.mapY;
+                            m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.currentFrame = 0;
+                        }
+                        else {
+                            m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.isMoving = true;
                         }
                     }
-
-                    auto [targetX, targetY] = coordSystem.ScreenToMap(unzoomedMouseX, unzoomedMouseY, m_cameraX, m_cameraY);
-
-                    if (leftClicked && clickedMonsterIdx != -1) {
-                        m_player.targetMonsterIndex = clickedMonsterIdx;
-                        m_player.isMoving = false;
-                        m_player.hasQueuedAction = false;
-                        m_player.isChasing = true;
-
-                        m_player.isAlert = false;
-                        m_player.alertTimer = 0.0f;
-                    }
-                    else if (currentLeftDown && clickedMonsterIdx == -1) {
-                        m_player.targetMonsterIndex = -1;
-                        m_player.isAttacking = false;
-                        m_player.isChasing = false;
-
-                        float dx = targetX - m_player.mapX;
-                        float dy = targetY - m_player.mapY;
-                        float dist = std::sqrt(dx * dx + dy * dy);
-
-                        if (!m_player.isJumping) {
-                            if (dist > 0.05f) m_player.facingAngle = -(std::atan2(dy, dx) - 0.78539f);
-
-                            if (GetAsyncKeyState(VK_CONTROL) & 0x8000) {
-                                m_player.isJumping = true; m_player.isMoving = false;
-                                m_player.jumpTimer = 0.0f; m_player.startMapX = m_player.mapX; m_player.startMapY = m_player.mapY;
-                                m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.currentFrame = 0;
-                            }
-                            else {
-                                m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.isMoving = true;
-                            }
-                        }
-                        else if (leftClicked) {
-                            m_player.hasQueuedAction = true;
-                            m_player.queuedTargetX = targetX;
-                            m_player.queuedTargetY = targetY;
-                            m_player.queuedIsJump = (GetAsyncKeyState(VK_CONTROL) & 0x8000);
-                        }
+                    else if (leftClicked) {
+                        m_player.hasQueuedAction = true;
+                        m_player.queuedTargetX = targetX;
+                        m_player.queuedTargetY = targetY;
+                        m_player.queuedIsJump = (GetAsyncKeyState(VK_CONTROL) & 0x8000);
                     }
                 }
             }
@@ -1182,9 +1629,10 @@ public:
                         monster.currentFrame++;
                         monster.animTimer -= (1.0f / 12.0f);
 
+                        auto& render = GetMonsterRender(monster.meshId, 330);
                         int maxFrames = 10;
-                        if (m_monsterDieModel.isValid && !m_monsterDieModel.motions.empty()) {
-                            maxFrames = m_monsterDieModel.motions[0].frameCount;
+                        if (render.model.isValid && !render.model.motions.empty()) {
+                            maxFrames = render.model.motions[0].frameCount;
                         }
 
                         if (monster.currentFrame >= maxFrames - 1) {
@@ -1220,9 +1668,10 @@ public:
                     if (monster.animTimer >= (1.0f / 10.0f)) {
                         monster.currentFrame++;
                         monster.animTimer -= (1.0f / 10.0f);
+                        auto& render = GetMonsterRender(monster.meshId, 331);
                         int maxFrames = 1;
-                        if (m_monsterDeadModel.isValid && !m_monsterDeadModel.motions.empty()) {
-                            maxFrames = m_monsterDeadModel.motions[0].frameCount;
+                        if (render.model.isValid && !render.model.motions.empty()) {
+                            maxFrames = render.model.motions[0].frameCount;
                         }
                         if (monster.currentFrame >= maxFrames) monster.currentFrame = maxFrames - 1;
                     }
@@ -1247,7 +1696,10 @@ public:
 
                 if (dist < 0.1f) {
                     monster.mapX = monster.targetX; monster.mapY = monster.targetY;
-                    monster.isMoving = false; monster.currentFrame = 0; monster.waitTimer = 0.0f;
+                    monster.isMoving = false;
+                    monster.currentAction = 100;
+                    monster.currentFrame = 0;
+                    monster.waitTimer = 0.0f;
                     monster.timeToWait = 1.0f + (rand() % 4);
                 }
                 else {
@@ -1265,16 +1717,14 @@ public:
                 if (monster.waitTimer >= monster.timeToWait) {
                     float offsetX = (float)((rand() % 9) - 4); float offsetY = (float)((rand() % 9) - 4);
                     monster.targetX = monster.startX + offsetX; monster.targetY = monster.startY + offsetY;
-                    monster.isMoving = true; monster.currentFrame = 0;
+                    monster.isMoving = true;
+                    monster.currentAction = 120;
+                    monster.currentFrame = 0;
                 }
                 monster.animTimer += deltaTime;
                 if (monster.animTimer >= (1.0f / 8.0f)) { monster.currentFrame++; monster.animTimer -= (1.0f / 8.0f); }
             }
             ++it;
-        }
-
-        for (const auto& newMob : spawnedMonsters) {
-            m_monsters.push_back(newMob);
         }
 
         for (auto it = m_activeEffects.begin(); it != m_activeEffects.end(); ) {
@@ -1384,16 +1834,24 @@ public:
 
         for (const auto& node : renderQueue) {
             if (node.type == 0) {
-                Resource::C3Model* mainBodyModel = nullptr;
-                if (!m_currentArmorParts.empty()) {
-                    if (m_player.isAttacking) mainBodyModel = &m_currentArmorParts[0].attackModel[m_player.currentAttackIndex];
-                    else if (m_player.isJumping) mainBodyModel = &m_currentArmorParts[0].jumpModel;
-                    else if (m_player.isMoving) mainBodyModel = &m_currentArmorParts[0].walkModel;
-                    else if (m_player.isAlert) mainBodyModel = &m_currentArmorParts[0].alertModel;
-                    else mainBodyModel = &m_currentArmorParts[0].idleModel;
+
+                // [CORRIGIDO] Lógica absoluta: Fantasia SUBSTITUI a armadura!
+                const std::vector<LoadedArmorPart>* activeBodyParts = &m_currentArmorParts;
+                if (!m_currentGarmentParts.empty()) {
+                    activeBodyParts = &m_currentGarmentParts;
                 }
 
-                for (const auto& part : m_currentArmorParts) {
+                Resource::C3Model* mainBodyModel = nullptr;
+                if (!activeBodyParts->empty()) {
+                    if (m_player.isAttacking) mainBodyModel = (Resource::C3Model*)&(*activeBodyParts)[0].attackModel[m_player.currentAttackIndex];
+                    else if (m_player.isJumping) mainBodyModel = (Resource::C3Model*)&(*activeBodyParts)[0].jumpModel;
+                    else if (m_player.isMoving) mainBodyModel = (Resource::C3Model*)&(*activeBodyParts)[0].walkModel;
+                    else if (m_player.isAlert) mainBodyModel = (Resource::C3Model*)&(*activeBodyParts)[0].alertModel;
+                    else mainBodyModel = (Resource::C3Model*)&(*activeBodyParts)[0].idleModel;
+                }
+
+                // Desenha APENAS o corpo que está ativo (Armadura ou Fantasia)
+                for (const auto& part : *activeBodyParts) {
                     Resource::C3Model* activeModel = (Resource::C3Model*)&part.idleModel;
                     if (m_player.isAttacking) activeModel = (Resource::C3Model*)&part.attackModel[m_player.currentAttackIndex];
                     else if (m_player.isJumping) activeModel = (Resource::C3Model*)&part.jumpModel;
@@ -1401,26 +1859,50 @@ public:
                     else if (m_player.isAlert) activeModel = (Resource::C3Model*)&part.alertModel;
 
                     if (activeModel->isValid)
-                        m_renderer.DrawMesh3D(*activeModel, cx, cy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, true, m_zoom, nullptr, -1, "", part.asb, part.adb, 1.0f, false);
+                        m_renderer.DrawMesh3D(*activeModel, cx, cy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, true, m_zoom, nullptr, -1, "", part.asb, part.adb);
                 }
 
-                Resource::C3Model* activeHair = &m_hairIdleModel;
-                Resource::C3Model* activeWeapon = &m_weaponIdleModel;
-                Resource::C3Model* activeLWeapon = &m_lweaponIdleModel;
+                if (m_currentArmetParts.empty()) {
+                    Resource::C3Model* activeHair = &m_hairIdleModel;
+                    if (m_player.isAttacking) { activeHair = &m_hairAttackModel[m_player.currentAttackIndex]; }
+                    else if (m_player.isJumping) { activeHair = &m_hairJumpModel; }
+                    else if (m_player.isMoving) { activeHair = &m_hairWalkModel; }
+                    else if (m_player.isAlert) { activeHair = &m_hairAlertModel; }
 
-                if (m_player.isAttacking) { activeHair = &m_hairAttackModel[m_player.currentAttackIndex]; }
-                else if (m_player.isJumping) { activeHair = &m_hairJumpModel; }
-                else if (m_player.isMoving) { activeHair = &m_hairWalkModel; }
-                else if (m_player.isAlert) { activeHair = &m_hairAlertModel; }
+                    if (activeHair->isValid) m_renderer.DrawMesh3D(*activeHair, cx, cy - (m_player.jumpZ * m_zoom), m_hairTextureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom);
+                }
+                else {
+                    for (const auto& part : m_currentArmetParts) {
+                        Resource::C3Model* activeModel = (Resource::C3Model*)&part.idleModel;
+                        if (m_player.isAttacking) activeModel = (Resource::C3Model*)&part.attackModel[m_player.currentAttackIndex];
+                        else if (m_player.isJumping) activeModel = (Resource::C3Model*)&part.jumpModel;
+                        else if (m_player.isMoving) activeModel = (Resource::C3Model*)&part.walkModel;
+                        else if (m_player.isAlert) activeModel = (Resource::C3Model*)&part.alertModel;
 
-                if (activeHair->isValid) m_renderer.DrawMesh3D(*activeHair, cx, cy - (m_player.jumpZ * m_zoom), m_hairTextureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, nullptr, -1, "", 5, 6, 1.0f, false);
+                        if (activeModel->isValid)
+                            m_renderer.DrawMesh3D(*activeModel, cx, cy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, nullptr, -1, "", part.asb, part.adb);
+                    }
+                }
 
-                int targetRightBone = m_rightHandPhy;
-                if (m_player.rightHandWeaponId / 100000 == 5) targetRightBone = m_leftHandPhy;
+                int rightWeaponBone = m_rightHandPhy;
+                int leftWeaponBone = m_leftHandPhy;
 
-                if (activeWeapon->isValid && mainBodyModel) m_renderer.DrawMesh3D(*activeWeapon, cx, cy - (m_player.jumpZ * m_zoom), m_weaponTextureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, targetRightBone, "", 5, 6, 1.0f, false);
+                if (m_player.rightHandWeaponId / 1000 == 500) {
+                    rightWeaponBone = m_leftHandPhy;
+                    leftWeaponBone = m_rightHandPhy;
+                }
 
-                if (activeLWeapon->isValid && mainBodyModel) m_renderer.DrawMesh3D(*activeLWeapon, cx, cy - (m_player.jumpZ * m_zoom), m_lweaponTextureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, m_leftHandPhy, "", 5, 6, 1.0f, false);
+                for (auto& wPart : m_rightWeaponParts) {
+                    if (wPart.model.isValid && mainBodyModel) {
+                        m_renderer.DrawMesh3D(wPart.model, cx, cy - (m_player.jumpZ * m_zoom), wPart.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, rightWeaponBone, "", wPart.asb, wPart.adb);
+                    }
+                }
+                for (auto& wPart : m_leftWeaponParts) {
+                    if (wPart.model.isValid && mainBodyModel) {
+                        m_renderer.DrawMesh3D(wPart.model, cx, cy - (m_player.jumpZ * m_zoom), wPart.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, leftWeaponBone, "", wPart.asb, wPart.adb);
+                    }
+                }
+
 
                 if (m_hasWing && mainBodyModel) {
                     int attachBone = (m_backPhy != -1) ? m_backPhy : 0;
@@ -1450,21 +1932,14 @@ public:
             else if (node.type == 1) {
                 auto& monster = m_monsters[node.index];
 
-                Resource::C3Model* activeMonsterModel = &m_monsterIdleModel;
-                if (monster.isDead) {
-                    if (monster.currentAction == 330) activeMonsterModel = &m_monsterDieModel;
-                    else if (monster.currentAction == 331) activeMonsterModel = &m_monsterDeadModel;
-                }
-                else if (monster.isMoving) {
-                    activeMonsterModel = &m_monsterWalkModel;
-                }
+                auto& render = GetMonsterRender(monster.meshId, monster.currentAction);
 
-                if (activeMonsterModel->isValid) {
+                if (render.model.isValid) {
                     auto [mWorldX, mWorldY] = coordSystem.MapToScreen(monster.mapX, monster.mapY);
                     float drawX = mWorldX - m_cameraX; float drawY = mWorldY - m_cameraY;
                     float zX = cx + (drawX - cx) * m_zoom; float zY = cy + (drawY - cy) * m_zoom;
 
-                    m_renderer.DrawMesh3D(*activeMonsterModel, zX, zY, m_monsterTextureId, monster.currentFrame, monster.facingAngle, 0.0f, false, m_zoom, nullptr, -1, "", 5, 6, monster.alpha, false);
+                    m_renderer.DrawMesh3D(render.model, zX, zY, render.textureId, monster.currentFrame, monster.facingAngle, 0.0f, false, m_zoom, nullptr, -1, "", render.asb, render.adb, monster.alpha);
 
                     if (!monster.isDead && m_texHpBlack != -1 && m_texHpRed != -1 && m_texHpOrange != -1) {
                         int mobHpBarW = 40; int mobHpBarH = 4;
@@ -1520,8 +1995,10 @@ public:
 
             float eScale = m_zoom;
             float eAlpha = 1.0f;
+            float ePitch = 0.0f;
 
             if (effect.isDamageNumber) {
+                ePitch = -1.5708f;
                 float life = effect.currentLife;
                 float baseSize = 0.70f;
 
@@ -1551,13 +2028,13 @@ public:
 
                 if (part.model.isValid) {
                     if (!part.model.phys.empty()) {
-                        m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, 0.0f, false, eScale, nullptr, -1, "", asb, adb, eAlpha, false);
+                        m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, false, eScale, nullptr, -1, "", asb, adb, eAlpha);
                     }
                     if (!part.model.ptcls.empty()) {
                         for (auto& ptcl : part.model.ptcls) {
                             ptcl.globalAlpha = eAlpha;
                         }
-                        m_renderer.DrawParticles(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, 0.0f, eScale, asb, adb);
+                        m_renderer.DrawParticles(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, eScale, asb, adb);
                     }
                 }
             }
@@ -1591,6 +2068,7 @@ public:
         std::time_t now = std::time(nullptr);
         std::tm* localTime = std::localtime(&now);
         wchar_t debugBuffer[256];
+
         swprintf(debugBuffer, 256, L"[KayanK-CO] (%d, %d) Ping: 0, Fps: %d, %02d:%02d %02d/%02d/%04d",
             (int)m_player.mapX, (int)m_player.mapY,
             m_currentFps,
@@ -1621,6 +2099,7 @@ public:
                 float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
                 lastTime = currentTime;
                 if (deltaTime > 0.1f) deltaTime = 0.1f;
+
                 Update(deltaTime);
 
                 m_renderer.BeginFrame();

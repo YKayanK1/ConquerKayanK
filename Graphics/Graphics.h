@@ -28,6 +28,7 @@ namespace Graphics {
 
         void DrawMesh3D(const Resource::C3Model& model, float x, float y, int textureId, int frame = 0, float angle = -0.78539f, float pitch = 0.0f, bool isPlayer = false, float scale = 1.0f, const Resource::C3Model* parentModel = nullptr, int linkBoneIndex = -1, const std::string& effectName = "", int asb = 5, int adb = 6, float alpha = 1.0f, bool disableZWrite = false);
 
+        // [CORRIGIDO] Adicionamos o "float pitch" para as partículas também poderem deitar/levantar!
         void DrawParticles(const Resource::C3Model& model, float x, float y, int textureId, int frame, float angle = -0.78539f, float pitch = 0.0f, float scale = 1.0f, int asb = 5, int adb = 6);
 
         // [NOVO] Ponte segura para o ImGui pegar o DirectX da DLL
