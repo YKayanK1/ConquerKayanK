@@ -41,7 +41,6 @@ namespace Resource {
         int adb = 6;
     };
 
-    // [CORRIGIDO] ArmorConfig agora suporta múltiplas partes!
     struct RESOURCE_API ArmorConfig {
         uint32_t id = 0;
         int partCount = 0;
@@ -85,6 +84,18 @@ namespace Resource {
         std::vector<PtclFrame> frames;
     };
 
+    // [NOVO] Estruturas matemáticas do Rastro (Ribbon/Shape)
+    struct RESOURCE_API C3ShapeLine {
+        std::vector<Vec3> points;
+    };
+
+    struct RESOURCE_API C3Shape {
+        std::string name;
+        std::string textureName;
+        int segmentCount = 0;
+        std::vector<C3ShapeLine> lines;
+    };
+
     struct RESOURCE_API C3KeyFrame { int pos = 0; std::vector<Matrix4x4> boneMatrices; };
     struct RESOURCE_API C3Motion {
         int boneCount = 0, frameCount = 0, morphCount = 0;
@@ -103,11 +114,13 @@ namespace Resource {
         std::vector<PhyVertex> vertices; std::vector<uint16_t> indices;
         Matrix4x4 initMatrix; float bboxMin[3]; float bboxMax[3];
     };
+
     struct RESOURCE_API C3Model {
         bool isValid = false;
         std::vector<C3Phy> phys;
         std::vector<C3Motion> motions;
         std::vector<C3Ptcl> ptcls;
+        std::vector<C3Shape> shapes; // [NOVO] Array de rastros lidos do arquivo
     };
 
     struct RESOURCE_API MapCell { int16_t access, surface, elevation; };

@@ -1,6 +1,6 @@
 // ============================================================================
-// Conquer Kayank Engine - Master Version
-// ============================================================================
+    // Conquer Kayank Engine - Master Version
+    // ============================================================================
 #define _CRT_SECURE_NO_WARNINGS
 #define NOMINMAX
 #include <windows.h>
@@ -208,7 +208,7 @@ public:
     std::vector<Game::SceneObject> m_sceneObjects;
 
     Resource::C3Model m_hairIdleModel, m_hairWalkModel, m_hairJumpModel, m_hairAlertModel;
-    Resource::C3Model m_hairAttackModel[3];
+    std::unordered_map<int, Resource::C3Model> m_hairAttackModels; // Mapa flexivel pra animações
 
     int m_hairTextureId = -1;
 
@@ -270,7 +270,7 @@ public:
         Resource::C3Model walkModel;
         Resource::C3Model jumpModel;
         Resource::C3Model alertModel;
-        Resource::C3Model attackModel[3];
+        std::unordered_map<int, Resource::C3Model> attackModels; // Flexivel
         int textureId = -1;
         int asb = 5;
         int adb = 6;
@@ -288,6 +288,7 @@ public:
         bool hasEffect = false;
         Resource::EffectConfig effectConfig;
         std::vector<LoadedEffectPart> effectParts;
+        std::vector<Graphics::ShapeRenderState> shapeStates;
     };
     std::vector<LoadedWeaponPart> m_rightWeaponParts;
     std::vector<LoadedWeaponPart> m_leftWeaponParts;
@@ -310,6 +311,16 @@ public:
         int maxLife;
     };
     std::vector<MonsterDef> m_monsterDB;
+
+    struct MagicDef {
+        uint32_t id;
+        uint32_t level;
+        std::string name;
+        std::string targetEffect;
+        std::string groundEffect;
+        uint32_t actionId;
+    };
+    std::vector<MagicDef> m_magicDB;
 
     struct CachedMonster {
         Resource::C3Model model;
@@ -336,6 +347,46 @@ public:
     int m_debugTexId = -1;
     int m_debugTexW = 0, m_debugTexH = 0;
     std::wstring m_lastDebugStr = L"";
+
+    void LoadMagicDB() {
+        auto data = m_resource.GetFileData("ini\\MagicType.txt");
+        if (data.empty()) return;
+
+        std::string content((char*)data.data(), data.size());
+        std::istringstream iss(content);
+        std::string line;
+
+        while (std::getline(iss, line)) {
+            if (line.empty()) continue;
+            std::istringstream ls(line);
+            std::vector<std::string> tokens;
+            std::string token;
+            while (ls >> token) {
+                tokens.push_back(token);
+            }
+
+            if (tokens.size() > 41) {
+                MagicDef def;
+                try { def.id = std::stoul(tokens[0]); }
+                catch (...) { continue; }
+                try { def.level = std::stoul(tokens[7]); }
+                catch (...) { def.level = 0; }
+
+                def.name = tokens[2];
+                std::replace(def.name.begin(), def.name.end(), '~', ' ');
+                def.targetEffect = tokens[41];
+
+                try { def.actionId = std::stoul(tokens[33]); }
+                catch (...) { def.actionId = 401; } // Coluna do ActionId!
+
+                if (def.targetEffect == "NULL") def.targetEffect = "";
+
+                if (def.id > 0) {
+                    m_magicDB.push_back(def);
+                }
+            }
+        }
+    }
 
     void LoadMonsterDB() {
         auto data = m_resource.GetFileData("ini\\dbmonster.txt");
@@ -456,6 +507,7 @@ public:
 
         LoadItemTypes("ini\\itemtype.txt");
         LoadMonsterDB();
+        LoadMagicDB();
 
         auto loadGui = [&](const std::vector<std::string>& paths) -> int {
             for (const auto& p : paths) {
@@ -758,7 +810,10 @@ public:
         for (auto& p : m_currentGarmentParts) { if (p.textureId != -1) m_renderer.DeleteTexture(p.textureId); }
         m_currentGarmentParts.clear();
 
-        if (garmentId == 0) return;
+        if (garmentId == 0) {
+            ChangeArmor(m_player.modelType, m_player.armorId);
+            return;
+        }
 
         Resource::C3Model animIdle = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::StandBy);
         Resource::C3Model animWalkL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunL);
@@ -766,11 +821,6 @@ public:
         Resource::C3Model animJump = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Jump);
         Resource::C3Model animAlert = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Alert);
         if (!animAlert.isValid || animAlert.motions.empty()) animAlert = animIdle;
-        Resource::C3Model animAttack1 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_401);
-        Resource::C3Model animAttack2 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_402);
-        Resource::C3Model animAttack3 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_403);
-        if (!animAttack2.isValid || animAttack2.motions.empty()) animAttack2 = animAttack1;
-        if (!animAttack3.isValid || animAttack3.motions.empty()) animAttack3 = animAttack1;
 
         uint32_t modelPrefix = static_cast<uint32_t>(type);
         uint32_t baseGarmentId = (modelPrefix * 1000000) + garmentId;
@@ -822,9 +872,20 @@ public:
                     newPart.walkModel = baseModel; ApplyWalkAnim(newPart.walkModel, animWalkL, animWalkR);
                     newPart.jumpModel = baseModel; ApplyAnim(newPart.jumpModel, animJump);
                     newPart.alertModel = baseModel; ApplyAnim(newPart.alertModel, animAlert);
-                    newPart.attackModel[0] = baseModel; ApplyAnim(newPart.attackModel[0], animAttack1);
-                    newPart.attackModel[1] = baseModel; ApplyAnim(newPart.attackModel[1], animAttack2);
-                    newPart.attackModel[2] = baseModel; ApplyAnim(newPart.attackModel[2], animAttack3);
+
+                    // [NOVO] Adicionado cache dinâmico de todos os tipos de ataque para Garment
+                    int attackTypes[] = { 401, 402, 403, 404, 405, 406, 407, 408, 409, 903 };
+                    for (int at : attackTypes) {
+                        Resource::C3Model aAnim = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)at);
+                        if (aAnim.isValid && !aAnim.motions.empty()) {
+                            newPart.attackModels[at] = baseModel;
+                            ApplyAnim(newPart.attackModels[at], aAnim);
+                        }
+                        else {
+                            newPart.attackModels[at] = baseModel;
+                            ApplyAnim(newPart.attackModels[at], GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_401));
+                        }
+                    }
                 }
             }
             if (m_ddsPaths.find(pCfg.texture) != m_ddsPaths.end()) {
@@ -847,11 +908,6 @@ public:
         Resource::C3Model animJump = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Jump);
         Resource::C3Model animAlert = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Alert);
         if (!animAlert.isValid || animAlert.motions.empty()) animAlert = animIdle;
-        Resource::C3Model animAttack1 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_401);
-        Resource::C3Model animAttack2 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_402);
-        Resource::C3Model animAttack3 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_403);
-        if (!animAttack2.isValid || animAttack2.motions.empty()) animAttack2 = animAttack1;
-        if (!animAttack3.isValid || animAttack3.motions.empty()) animAttack3 = animAttack1;
 
         if (armetId == 0) {
             for (auto& p : m_currentArmetParts) {
@@ -906,9 +962,19 @@ public:
                     newPart.walkModel = baseModel; ApplyWalkAnim(newPart.walkModel, animWalkL, animWalkR);
                     newPart.jumpModel = baseModel; ApplyAnim(newPart.jumpModel, animJump);
                     newPart.alertModel = baseModel; ApplyAnim(newPart.alertModel, animAlert);
-                    newPart.attackModel[0] = baseModel; ApplyAnim(newPart.attackModel[0], animAttack1);
-                    newPart.attackModel[1] = baseModel; ApplyAnim(newPart.attackModel[1], animAttack2);
-                    newPart.attackModel[2] = baseModel; ApplyAnim(newPart.attackModel[2], animAttack3);
+
+                    int attackTypes[] = { 401, 402, 403, 404, 405, 406, 407, 408, 409, 903 };
+                    for (int at : attackTypes) {
+                        Resource::C3Model aAnim = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)at);
+                        if (aAnim.isValid && !aAnim.motions.empty()) {
+                            newPart.attackModels[at] = baseModel;
+                            ApplyAnim(newPart.attackModels[at], aAnim);
+                        }
+                        else {
+                            newPart.attackModels[at] = baseModel;
+                            ApplyAnim(newPart.attackModels[at], GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_401));
+                        }
+                    }
                 }
             }
             if (m_ddsPaths.find(pCfg.texture) != m_ddsPaths.end()) {
@@ -962,6 +1028,9 @@ public:
                         if (it != m_effectConfigs.end()) {
                             newPart.hasEffect = true;
                             newPart.effectConfig = it->second;
+
+                            newPart.shapeStates.resize(it->second.parts.size());
+
                             for (auto& effCfgPart : newPart.effectConfig.parts) {
                                 LoadedEffectPart ep;
                                 if (m_c3Paths.count(effCfgPart.effectId)) {
@@ -1013,25 +1082,26 @@ public:
         Resource::C3Model animWalkL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunL);
         Resource::C3Model animWalkR = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunR);
         Resource::C3Model animJump = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Jump);
-
         Resource::C3Model animAlert = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Alert);
         if (!animAlert.isValid || animAlert.motions.empty()) animAlert = animIdle;
-
-        Resource::C3Model animAttack1 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_401);
-        Resource::C3Model animAttack2 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_402);
-        Resource::C3Model animAttack3 = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_403);
-
-        if (!animAttack2.isValid || animAttack2.motions.empty()) animAttack2 = animAttack1;
-        if (!animAttack3.isValid || animAttack3.motions.empty()) animAttack3 = animAttack1;
 
         ApplyAnim(m_hairIdleModel, animIdle);
         ApplyAnim(m_hairJumpModel, animJump);
         ApplyAnim(m_hairAlertModel, animAlert);
         ApplyWalkAnim(m_hairWalkModel, animWalkL, animWalkR);
 
-        ApplyAnim(m_hairAttackModel[0], animAttack1);
-        ApplyAnim(m_hairAttackModel[1], animAttack2);
-        ApplyAnim(m_hairAttackModel[2], animAttack3);
+        int attackTypes[] = { 401, 402, 403, 404, 405, 406, 407, 408, 409, 903 };
+        for (int at : attackTypes) {
+            Resource::C3Model aAnim = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)at);
+            if (aAnim.isValid && !aAnim.motions.empty()) {
+                m_hairAttackModels[at] = m_hairIdleModel;
+                ApplyAnim(m_hairAttackModels[at], aAnim);
+            }
+            else {
+                m_hairAttackModels[at] = m_hairIdleModel;
+                ApplyAnim(m_hairAttackModels[at], GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_401));
+            }
+        }
 
         uint32_t modelPrefix = static_cast<uint32_t>(type);
         uint32_t baseArmorId = (modelPrefix * 1000000) + armorId;
@@ -1089,9 +1159,17 @@ public:
                     newPart.jumpModel = baseModel; ApplyAnim(newPart.jumpModel, animJump);
                     newPart.alertModel = baseModel; ApplyAnim(newPart.alertModel, animAlert);
 
-                    newPart.attackModel[0] = baseModel; ApplyAnim(newPart.attackModel[0], animAttack1);
-                    newPart.attackModel[1] = baseModel; ApplyAnim(newPart.attackModel[1], animAttack2);
-                    newPart.attackModel[2] = baseModel; ApplyAnim(newPart.attackModel[2], animAttack3);
+                    for (int at : attackTypes) {
+                        Resource::C3Model aAnim = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)at);
+                        if (aAnim.isValid && !aAnim.motions.empty()) {
+                            newPart.attackModels[at] = baseModel;
+                            ApplyAnim(newPart.attackModels[at], aAnim);
+                        }
+                        else {
+                            newPart.attackModels[at] = baseModel;
+                            ApplyAnim(newPart.attackModels[at], GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::PhysicalAttack_401));
+                        }
+                    }
                 }
             }
 
@@ -1129,6 +1207,7 @@ public:
     }
 
     void DrawImGuiPanel() {
+        ImGui::SetNextWindowPos(ImVec2(10, 60), ImGuiCond_FirstUseEver); ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
         ImGui::Begin("Painel de Controle KayanK");
 
         if (ImGui::CollapsingHeader("Personagem (Modelo Base)", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -1276,26 +1355,62 @@ public:
             }
         }
 
-        if (ImGui::CollapsingHeader("Testar Efeitos Visuais")) {
-            static std::vector<std::string> allEffects;
-            if (allEffects.empty()) {
-                for (auto& pair : m_effectConfigs) {
-                    allEffects.push_back(pair.first);
+        if (ImGui::CollapsingHeader("Magias (MagicType.txt)", ImGuiTreeNodeFlags_DefaultOpen)) {
+            static int magic_idx = 0;
+
+            if (!m_magicDB.empty()) {
+                std::string currentMagicPreview = std::to_string(m_magicDB[magic_idx].id) + " - " + m_magicDB[magic_idx].name + " (Lv " + std::to_string(m_magicDB[magic_idx].level) + ")";
+
+                if (ImGui::BeginCombo("Selecione a Magia", currentMagicPreview.c_str())) {
+                    for (int n = 0; n < m_magicDB.size(); n++) {
+                        const bool is_selected = (magic_idx == n);
+
+                        std::string displayText = std::to_string(m_magicDB[n].id) + " - " + m_magicDB[n].name + " (Lv " + std::to_string(m_magicDB[n].level) + ")##" + std::to_string(n);
+
+                        if (ImGui::Selectable(displayText.c_str(), is_selected)) {
+                            magic_idx = n;
+                        }
+                        if (is_selected) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+
+                if (ImGui::Button("Lancar Magia", ImVec2(-1.0f, 40.0f))) {
+                    auto& magic = m_magicDB[magic_idx];
+
+                    float rad = m_player.facingAngle - 1.5708f;
+                    float fx = m_player.mapX + std::cos(rad) * 3.0f;
+                    float fy = m_player.mapY + std::sin(rad) * 3.0f;
+
+                    if (!magic.targetEffect.empty()) {
+                        LoadEffect(magic.targetEffect, fx, fy);
+                    }
+
+                    m_player.currentAttackAnim = (Game::RoleActionType)magic.actionId;
+
+                    m_player.isAttacking = true;
+                    m_player.currentFrame = 0;
+                    m_player.currentAttackIndex = magic.actionId;
                 }
             }
+            else {
+                ImGui::Text("Banco de Dados MagicType.txt nao carregado.");
+            }
+        }
 
+        if (ImGui::CollapsingHeader("Testar Todos Efeitos Visuais")) {
             static char searchBuffer[128] = "";
             ImGui::InputText("Buscar", searchBuffer, IM_ARRAYSIZE(searchBuffer));
 
             static int fx_idx = 0;
             std::string previewName = "Nenhum";
-            if (!allEffects.empty() && fx_idx >= 0 && fx_idx < allEffects.size()) {
-                previewName = allEffects[fx_idx];
+            if (!m_effectList.empty() && fx_idx >= 0 && fx_idx < m_effectList.size()) {
+                previewName = m_effectList[fx_idx];
             }
 
             if (ImGui::BeginCombo("Banco de Dados de Efeitos", previewName.c_str())) {
-                for (int n = 0; n < allEffects.size(); n++) {
-                    std::string effectName = allEffects[n];
+                for (int n = 0; n < m_effectList.size(); n++) {
+                    std::string effectName = m_effectList[n];
                     std::string searchStr = searchBuffer;
 
                     std::string lowerEffect = effectName;
@@ -1314,9 +1429,9 @@ public:
                 ImGui::EndCombo();
             }
 
-            if (ImGui::Button("Disparar Magia na Frente!", ImVec2(-1.0f, 40.0f))) {
-                if (!allEffects.empty() && fx_idx >= 0 && fx_idx < allEffects.size()) {
-                    LoadEffect(allEffects[fx_idx], m_player.mapX + 2.0f, m_player.mapY + 2.0f);
+            if (ImGui::Button("Disparar Efeito Bruto", ImVec2(-1.0f, 40.0f))) {
+                if (!m_effectList.empty() && fx_idx >= 0 && fx_idx < m_effectList.size()) {
+                    LoadEffect(m_effectList[fx_idx], m_player.mapX + 2.0f, m_player.mapY + 2.0f);
                 }
             }
         }
@@ -1398,6 +1513,11 @@ public:
         bool currentLeftDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
         bool leftClicked = currentLeftDown && !s_prevLeftDown;
         s_prevLeftDown = currentLeftDown;
+
+        if (!m_player.isAttacking && m_player.currentFrame == 0) {
+            for (auto& w : m_rightWeaponParts) { for (auto& s : w.shapeStates) s.Reset(); }
+            for (auto& w : m_leftWeaponParts) { for (auto& s : w.shapeStates) s.Reset(); }
+        }
 
         if (m_player.isAlert && !m_player.isAttacking) {
             m_player.alertTimer -= deltaTime;
@@ -1562,7 +1682,8 @@ public:
                     if (!m_player.isAttacking) {
                         m_player.isAttacking = true;
                         m_player.currentFrame = 0;
-                        m_player.currentAttackIndex = rand() % 3;
+                        m_player.currentAttackAnim = Game::RoleActionType::PhysicalAttack_401; // Default
+                        m_player.currentAttackIndex = 401;
 
                         m_player.isAlert = true;
                         m_player.alertTimer = 5.0f;
@@ -1896,34 +2017,54 @@ public:
         for (const auto& node : renderQueue) {
             if (node.type == 0) {
 
-                const std::vector<LoadedArmorPart>* activeBodyParts = &m_currentArmorParts;
+                // Retiramos o 'const' para podermos ler o mapa de magias sem erro de compilação
+                std::vector<LoadedArmorPart>* activeBodyParts = &m_currentArmorParts;
                 if (!m_currentGarmentParts.empty()) {
                     activeBodyParts = &m_currentGarmentParts;
                 }
 
                 Resource::C3Model* mainBodyModel = nullptr;
                 if (!activeBodyParts->empty()) {
-                    if (m_player.isAttacking) mainBodyModel = (Resource::C3Model*)&(*activeBodyParts)[0].attackModel[m_player.currentAttackIndex];
-                    else if (m_player.isJumping) mainBodyModel = (Resource::C3Model*)&(*activeBodyParts)[0].jumpModel;
-                    else if (m_player.isMoving) mainBodyModel = (Resource::C3Model*)&(*activeBodyParts)[0].walkModel;
-                    else if (m_player.isAlert) mainBodyModel = (Resource::C3Model*)&(*activeBodyParts)[0].alertModel;
-                    else mainBodyModel = (Resource::C3Model*)&(*activeBodyParts)[0].idleModel;
+                    if (m_player.isAttacking) {
+                        // Verifica com segurança se a animação pedida existe, senão cai pro ataque normal 401
+                        if ((*activeBodyParts)[0].attackModels.count(m_player.currentAttackIndex))
+                            mainBodyModel = &(*activeBodyParts)[0].attackModels[m_player.currentAttackIndex];
+                        else
+                            mainBodyModel = &(*activeBodyParts)[0].attackModels[401];
+                    }
+                    else if (m_player.isJumping) mainBodyModel = &(*activeBodyParts)[0].jumpModel;
+                    else if (m_player.isMoving) mainBodyModel = &(*activeBodyParts)[0].walkModel;
+                    else if (m_player.isAlert) mainBodyModel = &(*activeBodyParts)[0].alertModel;
+                    else mainBodyModel = &(*activeBodyParts)[0].idleModel;
                 }
 
-                for (const auto& part : *activeBodyParts) {
-                    Resource::C3Model* activeModel = (Resource::C3Model*)&part.idleModel;
-                    if (m_player.isAttacking) activeModel = (Resource::C3Model*)&part.attackModel[m_player.currentAttackIndex];
-                    else if (m_player.isJumping) activeModel = (Resource::C3Model*)&part.jumpModel;
-                    else if (m_player.isMoving) activeModel = (Resource::C3Model*)&part.walkModel;
-                    else if (m_player.isAlert) activeModel = (Resource::C3Model*)&part.alertModel;
+                // [CORRIGIDO] Retirado o 'const' do auto
+                for (auto& part : *activeBodyParts) {
+                    Resource::C3Model* activeModel = &part.idleModel;
+
+                    if (m_player.isAttacking) {
+                        if (part.attackModels.count(m_player.currentAttackIndex))
+                            activeModel = &part.attackModels[m_player.currentAttackIndex];
+                        else
+                            activeModel = &part.attackModels[401];
+                    }
+                    else if (m_player.isJumping) activeModel = &part.jumpModel;
+                    else if (m_player.isMoving) activeModel = &part.walkModel;
+                    else if (m_player.isAlert) activeModel = &part.alertModel;
 
                     if (activeModel->isValid)
-                        m_renderer.DrawMesh3D(*activeModel, cx, cy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, true, m_zoom, nullptr, -1, 0, part.asb, part.adb);
+                        m_renderer.DrawMesh3D(*activeModel, cx, cy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, true, m_zoom, nullptr, -1, 0, part.asb, part.adb, 1.0f, false, 0);
                 }
 
                 if (m_currentArmetParts.empty()) {
                     Resource::C3Model* activeHair = &m_hairIdleModel;
-                    if (m_player.isAttacking) { activeHair = &m_hairAttackModel[m_player.currentAttackIndex]; }
+
+                    if (m_player.isAttacking) {
+                        if (m_hairAttackModels.count(m_player.currentAttackIndex))
+                            activeHair = &m_hairAttackModels[m_player.currentAttackIndex];
+                        else
+                            activeHair = &m_hairAttackModels[401];
+                    }
                     else if (m_player.isJumping) { activeHair = &m_hairJumpModel; }
                     else if (m_player.isMoving) { activeHair = &m_hairWalkModel; }
                     else if (m_player.isAlert) { activeHair = &m_hairAlertModel; }
@@ -1931,15 +2072,22 @@ public:
                     if (activeHair->isValid) m_renderer.DrawMesh3D(*activeHair, cx, cy - (m_player.jumpZ * m_zoom), m_hairTextureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom);
                 }
                 else {
-                    for (const auto& part : m_currentArmetParts) {
-                        Resource::C3Model* activeModel = (Resource::C3Model*)&part.idleModel;
-                        if (m_player.isAttacking) activeModel = (Resource::C3Model*)&part.attackModel[m_player.currentAttackIndex];
-                        else if (m_player.isJumping) activeModel = (Resource::C3Model*)&part.jumpModel;
-                        else if (m_player.isMoving) activeModel = (Resource::C3Model*)&part.walkModel;
-                        else if (m_player.isAlert) activeModel = (Resource::C3Model*)&part.alertModel;
+                    // [CORRIGIDO] Retirado o 'const' do auto
+                    for (auto& part : m_currentArmetParts) {
+                        Resource::C3Model* activeModel = &part.idleModel;
+
+                        if (m_player.isAttacking) {
+                            if (part.attackModels.count(m_player.currentAttackIndex))
+                                activeModel = &part.attackModels[m_player.currentAttackIndex];
+                            else
+                                activeModel = &part.attackModels[401];
+                        }
+                        else if (m_player.isJumping) activeModel = &part.jumpModel;
+                        else if (m_player.isMoving) activeModel = &part.walkModel;
+                        else if (m_player.isAlert) activeModel = &part.alertModel;
 
                         if (activeModel->isValid)
-                            m_renderer.DrawMesh3D(*activeModel, cx, cy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, nullptr, -1, 0, part.asb, part.adb);
+                            m_renderer.DrawMesh3D(*activeModel, cx, cy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, nullptr, -1, 0, part.asb, part.adb, 1.0f, false, 0);
                     }
                 }
 
@@ -1953,7 +2101,7 @@ public:
 
                 for (auto& wPart : m_rightWeaponParts) {
                     if (wPart.model.isValid && mainBodyModel) {
-                        m_renderer.DrawMesh3D(wPart.model, cx, cy - (m_player.jumpZ * m_zoom), wPart.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, rightWeaponBone, m_player.currentFrame, wPart.asb, wPart.adb);
+                        m_renderer.DrawMesh3D(wPart.model, cx, cy - (m_player.jumpZ * m_zoom), wPart.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, rightWeaponBone, m_player.currentFrame, wPart.asb, wPart.adb, 1.0f, false, 0);
 
                         if (wPart.hasEffect) {
                             for (size_t i = 0; i < wPart.effectParts.size(); i++) {
@@ -1961,10 +2109,14 @@ public:
                                 if (ep.model.isValid) {
                                     int easb = wPart.effectConfig.parts[i].asb;
                                     int eadb = wPart.effectConfig.parts[i].adb;
-                                    int eColor = wPart.effectConfig.colorEnable; // [NOVO] Lendo o ColorEnable
+                                    int eColor = wPart.effectConfig.colorEnable;
 
-                                    if (!ep.model.phys.empty()) m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, rightWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true, eColor); // Passando o eColor
-                                    if (!ep.model.ptcls.empty()) m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, rightWeaponBone, m_player.currentFrame, eColor); // Passando o eColor
+                                    if (!ep.model.phys.empty()) m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, rightWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true, eColor);
+                                    if (!ep.model.ptcls.empty()) m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, rightWeaponBone, m_player.currentFrame, eColor);
+
+                                    if (m_player.isAttacking && !ep.model.shapes.empty()) {
+                                        m_renderer.DrawShapes(ep.model, wPart.shapeStates[i], cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, rightWeaponBone, m_player.currentFrame, eColor, false);
+                                    }
                                 }
                             }
                         }
@@ -1973,7 +2125,7 @@ public:
 
                 for (auto& wPart : m_leftWeaponParts) {
                     if (wPart.model.isValid && mainBodyModel) {
-                        m_renderer.DrawMesh3D(wPart.model, cx, cy - (m_player.jumpZ * m_zoom), wPart.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, leftWeaponBone, m_player.currentFrame, wPart.asb, wPart.adb);
+                        m_renderer.DrawMesh3D(wPart.model, cx, cy - (m_player.jumpZ * m_zoom), wPart.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, leftWeaponBone, m_player.currentFrame, wPart.asb, wPart.adb, 1.0f, false, 0);
 
                         if (wPart.hasEffect) {
                             for (size_t i = 0; i < wPart.effectParts.size(); i++) {
@@ -1981,10 +2133,14 @@ public:
                                 if (ep.model.isValid) {
                                     int easb = wPart.effectConfig.parts[i].asb;
                                     int eadb = wPart.effectConfig.parts[i].adb;
-                                    int eColor = wPart.effectConfig.colorEnable; // [NOVO]
+                                    int eColor = wPart.effectConfig.colorEnable;
 
-                                    if (!ep.model.phys.empty()) m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, leftWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true, eColor); // Passando o eColor
-                                    if (!ep.model.ptcls.empty()) m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, leftWeaponBone, m_player.currentFrame, eColor); // Passando o eColor
+                                    if (!ep.model.phys.empty()) m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, leftWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true, eColor);
+                                    if (!ep.model.ptcls.empty()) m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, leftWeaponBone, m_player.currentFrame, eColor);
+
+                                    if (m_player.isAttacking && !ep.model.shapes.empty()) {
+                                        m_renderer.DrawShapes(ep.model, wPart.shapeStates[i], cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, leftWeaponBone, m_player.currentFrame, eColor, false);
+                                    }
                                 }
                             }
                         }
@@ -2008,10 +2164,10 @@ public:
                             float wingPitch = 1.5708f;
 
                             if (!part.model.phys.empty()) {
-                                m_renderer.DrawMesh3D(part.model, cx + wingOffsetX, cy - (m_player.jumpZ * m_zoom) - wingOffsetY, part.textureId, m_wingFrame, wingRotation, wingPitch, false, m_zoom, mainBodyModel, attachBone, m_player.currentFrame, asb, adb, 1.0f, true);
+                                m_renderer.DrawMesh3D(part.model, cx + wingOffsetX, cy - (m_player.jumpZ * m_zoom) - wingOffsetY, part.textureId, m_wingFrame, wingRotation, wingPitch, false, m_zoom, mainBodyModel, attachBone, m_player.currentFrame, asb, adb, 1.0f, true, 0);
                             }
                             if (!part.model.ptcls.empty()) {
-                                m_renderer.DrawParticles(part.model, cx + wingOffsetX, cy - (m_player.jumpZ * m_zoom) - wingOffsetY, part.textureId, m_wingFrame, wingRotation, wingPitch, m_zoom, asb, adb, mainBodyModel, attachBone, m_player.currentFrame);
+                                m_renderer.DrawParticles(part.model, cx + wingOffsetX, cy - (m_player.jumpZ * m_zoom) - wingOffsetY, part.textureId, m_wingFrame, wingRotation, wingPitch, m_zoom, asb, adb, mainBodyModel, attachBone, m_player.currentFrame, 0);
                             }
                         }
                     }
@@ -2027,7 +2183,7 @@ public:
                     float drawX = mWorldX - m_cameraX; float drawY = mWorldY - m_cameraY;
                     float zX = cx + (drawX - cx) * m_zoom; float zY = cy + (drawY - cy) * m_zoom;
 
-                    m_renderer.DrawMesh3D(render.model, zX, zY, render.textureId, monster.currentFrame, monster.facingAngle, 0.0f, false, m_zoom, nullptr, -1, 0, render.asb, render.adb, monster.alpha);
+                    m_renderer.DrawMesh3D(render.model, zX, zY, render.textureId, monster.currentFrame, monster.facingAngle, 0.0f, false, m_zoom, nullptr, -1, 0, render.asb, render.adb, monster.alpha, false, 0);
 
                     if (!monster.isDead && m_texHpBlack != -1 && m_texHpRed != -1 && m_texHpOrange != -1) {
                         int mobHpBarW = 40; int mobHpBarH = 4;
@@ -2113,17 +2269,17 @@ public:
                 auto& part = effect.parts[i];
                 int asb = effect.config.parts[i].asb;
                 int adb = effect.config.parts[i].adb;
-                int eColor = effect.config.colorEnable; // [NOVO] Lendo o ColorEnable
+                int eColor = effect.config.colorEnable;
 
                 if (part.model.isValid) {
                     if (!part.model.phys.empty()) {
-                        m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, false, eScale, nullptr, -1, 0, asb, adb, eAlpha, false, eColor); // Passando o eColor
+                        m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, false, eScale, nullptr, -1, 0, asb, adb, eAlpha, false, eColor);
                     }
                     if (!part.model.ptcls.empty()) {
                         for (auto& ptcl : part.model.ptcls) {
                             ptcl.globalAlpha = eAlpha;
                         }
-                        m_renderer.DrawParticles(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, eScale, asb, adb, nullptr, -1, 0, eColor); // Passando o eColor
+                        m_renderer.DrawParticles(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, eScale, asb, adb, nullptr, -1, 0, eColor);
                     }
                 }
             }

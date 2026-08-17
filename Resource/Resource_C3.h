@@ -1,6 +1,3 @@
-// ============================================================================
-// Conquer Kayank Engine
-// ============================================================================
 #pragma once
 #include "Resource.h"
 #include "Resource_Utils.h"
@@ -171,7 +168,27 @@ namespace Resource {
                 model.ptcls.push_back(ptcl);
             }
             else if (chunkTag == "SHAP") {
-                std::cout << "[C3 PARSER] -> Bloco de Rastro/Shape (" << chunkTag << ") encontrado! (Requer sistema de ribbons)\n";
+                C3Shape shape;
+                uint32_t nameLen = br.Read<uint32_t>();
+                shape.name = br.ReadString(nameLen);
+
+                uint32_t lineCount = br.Read<uint32_t>();
+                for (uint32_t n = 0; n < lineCount; n++) {
+                    C3ShapeLine line;
+                    uint32_t vecCount = br.Read<uint32_t>();
+                    for (uint32_t v = 0; v < vecCount; v++) {
+                        Vec3 pt; pt.x = br.Read<float>(); pt.y = br.Read<float>(); pt.z = br.Read<float>();
+                        line.points.push_back(pt);
+                    }
+                    shape.lines.push_back(line);
+                }
+
+                uint32_t texLen = br.Read<uint32_t>();
+                shape.textureName = br.ReadString(texLen);
+
+                shape.segmentCount = br.Read<uint32_t>();
+
+                model.shapes.push_back(shape);
             }
 
             br.SetPosition(chunkEnd);

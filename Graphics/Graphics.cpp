@@ -463,8 +463,6 @@ namespace Graphics {
             auto ctx = d3d.context;
 
             ctx->OMSetDepthStencilState(depthState2D.Get(), 0);
-
-            // [NOVO] Adicionado suporte ao ColorEnable para Partículas
             ApplyBlendState(adb, colorEnable);
 
             DirectX::XMMATRIX ortho = DirectX::XMMatrixOrthographicOffCenterLH(
@@ -577,6 +575,162 @@ namespace Graphics {
 
             ctx->OMSetBlendState(blendStateAlpha.Get(), nullptr, 0xFFFFFFFF);
         }
+
+        /* STREAMING_CHUNK: Implementando a Lógica Espetacular dos Ribbons (Shapes)... */
+        void DrawShapes(const Resource::C3Model& model, ShapeRenderState& state, float x, float y, int textureId, int frame, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame, int colorEnable, bool forceLocal) {
+            if (model.shapes.empty()) return;
+            const auto& shape = model.shapes[0];
+            if (shape.lines.empty() || shape.lines[0].points.empty()) return;
+
+            auto& d3d = D3DContext::GetInstance();
+            auto ctx = d3d.context;
+
+            if (state.segCount == 0) state.Initialize(shape.segmentCount);
+
+            DirectX::XMMATRIX ortho = DirectX::XMMatrixOrthographicOffCenterLH(0.0f, (float)d3d.screenWidth, (float)d3d.screenHeight, 0.0f, -1000.0f, 1000.0f);
+            DirectX::XMMATRIX localPitch = DirectX::XMMatrixRotationX(pitch);
+            DirectX::XMMATRIX rotZ = DirectX::XMMatrixRotationZ(angle);
+            DirectX::XMMATRIX rotX = DirectX::XMMatrixRotationX(1.04719f);
+            float s = 0.6f * scale;
+            DirectX::XMMATRIX modelScale = DirectX::XMMatrixScaling(s, -s, s);
+
+            DirectX::XMMATRIX attachmentMat = DirectX::XMMatrixIdentity();
+            if (parentModel != nullptr && linkBoneIndex >= 0 && linkBoneIndex < (int)parentModel->motions.size()) {
+                if (parentModel->motions[linkBoneIndex].boneCount > 0) {
+                    attachmentMat = GetInterpolatedBone(parentModel->motions[linkBoneIndex], 0, parentFrame);
+                }
+            }
+
+            DirectX::XMMATRIX world = localPitch * attachmentMat * rotZ * rotX * modelScale * DirectX::XMMatrixTranslation(x, y, 0.0f);
+            DirectX::XMMATRIX mm = forceLocal ? DirectX::XMMatrixIdentity() : world;
+
+            // Extraindo as posições globais da base e ponta da espada
+            auto p0 = shape.lines[0].points[0];
+            auto p1 = shape.lines[0].points.size() > 1 ? shape.lines[0].points[1] : p0;
+
+            DirectX::XMVECTOR vecA = DirectX::XMVector3Transform(DirectX::XMVectorSet(p0.x, p0.y, p0.z, 1.0f), mm);
+            DirectX::XMVECTOR vecB = DirectX::XMVector3Transform(DirectX::XMVectorSet(p1.x, p1.y, p1.z, 1.0f), mm);
+
+            DirectX::XMFLOAT3 fVecA, fVecB;
+            DirectX::XMStoreFloat3(&fVecA, vecA);
+            DirectX::XMStoreFloat3(&fVecB, vecB);
+
+            // A Matemática do C3Studio: O Ring Buffer e a Suavização (SMOOTH = 10)
+            const int SMOOTH = 10;
+
+            auto WriteSegment = [&](const DirectX::XMFLOAT3& a, const DirectX::XMFLOAT3& b, const DirectX::XMFLOAT3& prevA, const DirectX::XMFLOAT3& prevB) {
+                int cur = state.segCur * 6;
+                state.vb[cur + 0] = { a.x, a.y, a.z, 1, 1, 1, 1, 0, 0 };
+                state.vb[cur + 1] = { b.x, b.y, b.z, 1, 1, 1, 1, 0, 1 };
+                state.vb[cur + 2] = { prevB.x, prevB.y, prevB.z, 1, 1, 1, 1, 0, 1 };
+                state.vb[cur + 3] = { prevA.x, prevA.y, prevA.z, 1, 1, 1, 1, 0, 0 };
+                state.vb[cur + 4] = { prevB.x, prevB.y, prevB.z, 1, 1, 1, 1, 0, 1 };
+                state.vb[cur + 5] = { a.x, a.y, a.z, 1, 1, 1, 1, 0, 0 };
+                state.segCur = (state.segCur + 1) % state.segCount;
+                };
+
+            auto SetSegmentUV = [&](int seg, float u, float step) {
+                int b = seg * 6;
+                state.vb[b + 0].u = u; state.vb[b + 0].v = 0;
+                state.vb[b + 1].u = u; state.vb[b + 1].v = 1;
+                state.vb[b + 5].u = u; state.vb[b + 5].v = 0;
+                u -= step;
+                state.vb[b + 2].u = u; state.vb[b + 2].v = 1;
+                state.vb[b + 3].u = u; state.vb[b + 3].v = 0;
+                state.vb[b + 4].u = u; state.vb[b + 4].v = 1;
+                };
+
+            if (state.isFirst) {
+                for (auto& v : state.vb) { v.px = v.py = v.pz = 0; v.a = 0; }
+                state.isFirst = false;
+            }
+            else {
+                DirectX::XMVECTOR prevAVec = DirectX::XMVectorSet(state.lastAx, state.lastAy, state.lastAz, 0.0f);
+                DirectX::XMVECTOR prevBVec = DirectX::XMVectorSet(state.lastBx, state.lastBy, state.lastBz, 0.0f);
+
+                DirectX::XMVECTOR distVec = DirectX::XMVector3Length(DirectX::XMVectorSubtract(vecA, vecB));
+                float len = DirectX::XMVectorGetX(distVec);
+
+                DirectX::XMFLOAT3 currentA = { state.lastAx, state.lastAy, state.lastAz };
+                DirectX::XMFLOAT3 currentB = { state.lastBx, state.lastBy, state.lastBz };
+
+                for (int nn = 0; nn < SMOOTH; nn++) {
+                    float t = (nn + 1.0f) / (SMOOTH + 1.0f);
+                    DirectX::XMVECTOR sAVec = DirectX::XMVectorLerp(prevAVec, vecA, t);
+                    DirectX::XMVECTOR sBVec = DirectX::XMVectorLerp(prevBVec, vecB, t);
+
+                    DirectX::XMVECTOR lnowVec = DirectX::XMVector3Length(DirectX::XMVectorSubtract(sAVec, sBVec));
+                    float lnow = DirectX::XMVectorGetX(lnowVec);
+
+                    if (lnow > 0.0001f) {
+                        sAVec = DirectX::XMVectorLerp(sBVec, sAVec, len / lnow);
+                    }
+
+                    DirectX::XMFLOAT3 sA, sB;
+                    DirectX::XMStoreFloat3(&sA, sAVec);
+                    DirectX::XMStoreFloat3(&sB, sBVec);
+
+                    WriteSegment(sA, sB, currentA, currentB);
+                    currentA = sA; currentB = sB;
+                }
+                WriteSegment(fVecA, fVecB, currentA, currentB);
+
+                // Update UVs para fazer o efeito rastro invisível no final
+                float uvStep = 0.9f / state.segCount;
+                float u = state.segCount * uvStep + 0.05f;
+
+                for (int n = state.segCur - 1; n >= 0; n--) { SetSegmentUV(n, u, uvStep); u -= uvStep; }
+                for (int n = state.segCount - 1; n > state.segCur; n--) { SetSegmentUV(n, u, uvStep); u -= uvStep; }
+            }
+
+            state.lastAx = fVecA.x; state.lastAy = fVecA.y; state.lastAz = fVecA.z;
+            state.lastBx = fVecB.x; state.lastBy = fVecB.y; state.lastBz = fVecB.z;
+
+            // Renderizando o Ribbon como Partículas!
+            ctx->OMSetDepthStencilState(depthState2D.Get(), 0);
+            ApplyBlendState(adb, colorEnable);
+
+            ConstantBuffer cb;
+            cb.WVP = DirectX::XMMatrixTranspose(forceLocal ? (world * ortho) : ortho);
+            ctx->UpdateSubresource(constantBuffer.Get(), 0, nullptr, &cb, 0, 0);
+
+            ctx->IASetInputLayout(layoutPtcl.Get());
+            ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            ctx->VSSetShader(vsPtcl.Get(), nullptr, 0);
+            ctx->VSSetConstantBuffers(0, 1, constantBuffer.GetAddressOf());
+            ctx->PSSetShader(psPtcl.Get(), nullptr, 0);
+
+            if (textures.count(textureId)) {
+                ctx->PSSetShaderResources(0, 1, textures[textureId].GetAddressOf());
+                ctx->PSSetSamplers(0, 1, samplerState.GetAddressOf());
+            }
+
+            D3D11_MAPPED_SUBRESOURCE mappedData;
+            ctx->Map(ptclVB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedData);
+            VertexPtcl* vertices = (VertexPtcl*)mappedData.pData;
+
+            int drawCount = 0;
+            for (int i = 0; i < state.segCount * 6; i++) {
+                if (state.vb[i].a > 0) {
+                    vertices[i] = {
+                        DirectX::XMFLOAT3(state.vb[i].px, state.vb[i].py, state.vb[i].pz),
+                        DirectX::XMFLOAT4(state.vb[i].r, state.vb[i].g, state.vb[i].b, state.vb[i].a),
+                        DirectX::XMFLOAT2(state.vb[i].u, state.vb[i].v)
+                    };
+                    drawCount++;
+                }
+            }
+            ctx->Unmap(ptclVB.Get(), 0);
+
+            if (drawCount > 0) {
+                UINT stride = sizeof(VertexPtcl); UINT offset = 0;
+                ctx->IASetVertexBuffers(0, 1, ptclVB.GetAddressOf(), &stride, &offset);
+                // Não usamos index buffer aqui pois os dados já estão triangulados sequencialmente na nossa lista
+                ctx->Draw(drawCount, 0);
+            }
+
+            ctx->OMSetBlendState(blendStateAlpha.Get(), nullptr, 0xFFFFFFFF);
+        }
     };
 
     struct SceneRenderer::Impl {
@@ -593,6 +747,11 @@ namespace Graphics {
         void DrawParticles(const Resource::C3Model& model, float x, float y, int texId, int frame, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame, int colorEnable) {
             renderer.DrawParticles(model, x, y, texId, frame, angle, pitch, scale, asb, adb, parentModel, linkBoneIndex, parentFrame, colorEnable);
         }
+
+        void DrawShapes(const Resource::C3Model& model, ShapeRenderState& state, float x, float y, int texId, int frame, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame, int colorEnable, bool forceLocal) {
+            renderer.DrawShapes(model, state, x, y, texId, frame, angle, pitch, scale, asb, adb, parentModel, linkBoneIndex, parentFrame, colorEnable, forceLocal);
+        }
+
         void EndFrame() { D3DContext::GetInstance().EndFrame(); }
         void LoadTexture(const wchar_t* filename) {}
         int LoadTextureFromMemory(const uint8_t* data, size_t size) { return renderer.LoadTextureFromMemory(data, size); }
@@ -613,6 +772,11 @@ namespace Graphics {
     void SceneRenderer::DrawParticles(const Resource::C3Model& m, float x, float y, int texId, int f, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* pModel, int boneIdx, int parentFrame, int colorEnable) {
         pImpl->DrawParticles(m, x, y, texId, f, angle, pitch, scale, asb, adb, pModel, boneIdx, parentFrame, colorEnable);
     }
+
+    void SceneRenderer::DrawShapes(const Resource::C3Model& m, ShapeRenderState& state, float x, float y, int texId, int f, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* pModel, int boneIdx, int parentFrame, int colorEnable, bool forceLocal) {
+        pImpl->DrawShapes(m, state, x, y, texId, f, angle, pitch, scale, asb, adb, pModel, boneIdx, parentFrame, colorEnable, forceLocal);
+    }
+
     void SceneRenderer::EndFrame() { pImpl->EndFrame(); }
     void SceneRenderer::LoadTexture(const wchar_t* filename) { pImpl->LoadTexture(filename); }
     int SceneRenderer::LoadTextureFromMemory(const uint8_t* data, size_t size) { return pImpl->LoadTextureFromMemory(data, size); }
