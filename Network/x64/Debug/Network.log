@@ -1,0 +1,49 @@
+﻿  pch.cpp
+  Network.cpp
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Network\Network.cpp(113,30): warning C4251: 'Network::Packet::m_buffer': 'std::vector<uint8_t,std::allocator<uint8_t>>' needs to have dll-interface to be used by clients of 'Network::Packet'
+  (compiling source file '/Network.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<uint8_t,std::allocator<uint8_t>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Network\Network.cpp(295,27): warning C4251: 'Network::NetworkClient::m_isConnected': 'std::atomic<bool>' needs to have dll-interface to be used by clients of 'Network::NetworkClient'
+  (compiling source file '/Network.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\atomic(2123,8):
+      see declaration of 'std::atomic<bool>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Network\Network.cpp(296,27): warning C4251: 'Network::NetworkClient::m_disconnecting': 'std::atomic<bool>' needs to have dll-interface to be used by clients of 'Network::NetworkClient'
+  (compiling source file '/Network.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\atomic(2123,8):
+      see declaration of 'std::atomic<bool>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Network\Network.cpp(297,21): warning C4251: 'Network::NetworkClient::m_recvThread': 'std::thread' needs to have dll-interface to be used by clients of 'Network::NetworkClient'
+  (compiling source file '/Network.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\thread(42,19):
+      see declaration of 'std::thread'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Network\Network.cpp(299,34): warning C4251: 'Network::NetworkClient::m_crypto': 'std::shared_ptr<Network::ICrypto>' needs to have dll-interface to be used by clients of 'Network::NetworkClient'
+  (compiling source file '/Network.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\memory(1588,7):
+      see declaration of 'std::shared_ptr<Network::ICrypto>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Network\Network.cpp(300,31): warning C4251: 'Network::NetworkClient::m_onPacketReceived': 'std::function<void (std::shared_ptr<Network::Packet>)>' needs to have dll-interface to be used by clients of 'Network::NetworkClient'
+  (compiling source file '/Network.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\functional(1221,7):
+      see declaration of 'std::function<void (std::shared_ptr<Network::Packet>)>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Network\Network.cpp(301,34): warning C4251: 'Network::NetworkClient::m_onStatusChanged': 'std::function<void (bool)>' needs to have dll-interface to be used by clients of 'Network::NetworkClient'
+  (compiling source file '/Network.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\functional(1221,7):
+      see declaration of 'std::function<void (bool)>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Network\Network.cpp(361,40): warning C4251: 'Network::NetworkManager::m_client': 'std::unique_ptr<Network::NetworkClient,std::default_delete<Network::NetworkClient>>' needs to have dll-interface to be used by clients of 'Network::NetworkManager'
+  (compiling source file '/Network.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\memory(3376,7):
+      see declaration of 'std::unique_ptr<Network::NetworkClient,std::default_delete<Network::NetworkClient>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Network\Network.cpp(362,54): warning C4251: 'Network::NetworkManager::m_globalDispatcher': 'std::function<void (std::shared_ptr<Network::Packet>)>' needs to have dll-interface to be used by clients of 'Network::NetworkManager'
+  (compiling source file '/Network.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\functional(1221,7):
+      see declaration of 'std::function<void (std::shared_ptr<Network::Packet>)>'
+  
+     Creating library D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Network.lib and object D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Network.exp
+  Network.vcxproj -> D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Network.dll

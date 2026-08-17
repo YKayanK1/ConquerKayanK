@@ -61,6 +61,11 @@ namespace Game {
         bool queuedIsJump = false;
         float queuedTargetX = 0.0f, queuedTargetY = 0.0f;
 
+        // [NOVO] Variáveis para segurar o ataque se o boneco estiver no alto!
+        bool hasQueuedAttack = false;
+        RoleActionType queuedAttackAnim = RoleActionType::StandBy;
+        uint32_t queuedAttackIndex = 0;
+
         ModelType modelType = ModelType::SmallFemale;
         uint32_t armorId = 0;
         uint32_t rightHandWeaponId = 0;
@@ -71,7 +76,7 @@ namespace Game {
         bool isAttacking = false;
 
         RoleActionType currentAttackAnim = RoleActionType::PhysicalAttack_401;
-        int currentAttackIndex = 401; // [CORREÇÃO] A variável que o Conquer.cpp espera!
+        int currentAttackIndex = 401;
 
         bool isAlert = false;
         float alertTimer = 0.0f;

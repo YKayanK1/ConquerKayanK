@@ -141,9 +141,13 @@ namespace Resource {
             return ParseAction3DEffectsData(GetFileData(path));
         }
 
-        // [NOVO] Adicionado o invocador final do TME
         TMEData ParseTME(const std::string& path) {
             return ParseTMEDataBinary(GetFileData(path));
+        }
+
+        // [NOVO] Adicionado!
+        std::unordered_map<std::string, std::string> ParseActionSound(const std::string& path) {
+            return ParseActionSoundData(GetFileData(path));
         }
     };
 
@@ -165,4 +169,5 @@ namespace Resource {
     std::unordered_map<uint32_t, WeaponConfig> Manager::ParseWeaponIni(const std::string& path) { return pImpl->ParseWeaponIni(path); }
     std::unordered_map<uint32_t, std::string> Manager::ParseAction3DEffects(const std::string& path) { return pImpl->ParseAction3DEffects(path); }
     TMEData Manager::ParseTME(const std::string& path) { return pImpl->ParseTME(path); }
+    std::unordered_map<std::string, std::string> Manager::ParseActionSound(const std::string& path) { return pImpl->ParseActionSound(path); } // [NOVO]
 }

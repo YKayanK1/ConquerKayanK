@@ -13,7 +13,6 @@
 
 namespace Resource {
 
-    // [NOVO] Estrutura do TME que você descobriu no Hex Editor!
     struct RESOURCE_API TMENode {
         std::string effectName;
         uint32_t delay;
@@ -194,8 +193,9 @@ namespace Resource {
         std::unordered_map<uint32_t, WeaponConfig> ParseWeaponIni(const std::string& filePath);
         std::unordered_map<uint32_t, std::string> ParseAction3DEffects(const std::string& filePath);
 
-        // [NOVO] O construtor que vai rodar o seu TME!
         TMEData ParseTME(const std::string& filePath);
+
+        std::unordered_map<std::string, std::string> ParseActionSound(const std::string& filePath);
 
     private:
         struct Impl;

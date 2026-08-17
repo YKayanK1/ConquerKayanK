@@ -1,0 +1,74 @@
+﻿  pch.cpp
+  UI.cpp
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\UI\UI.cpp(44,21): warning C4251: 'UI::DrawCommand::resourceName': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'UI::DrawCommand'
+  (compiling source file '/UI.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\UI\UI.cpp(56,21): warning C4251: 'UI::UIElement::Name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'UI::UIElement'
+  (compiling source file '/UI.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\UI\UI.cpp(63,49): warning C4251: 'UI::UIElement::Children': 'std::vector<std::shared_ptr<UI::UIElement>,std::allocator<std::shared_ptr<UI::UIElement>>>' needs to have dll-interface to be used by clients of 'UI::UIElement'
+  (compiling source file '/UI.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<std::shared_ptr<UI::UIElement>,std::allocator<std::shared_ptr<UI::UIElement>>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\UI\UI.cpp(99,21): warning C4251: 'UI::UIButton::TextureNormal': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'UI::UIButton'
+  (compiling source file '/UI.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\UI\UI.cpp(100,21): warning C4251: 'UI::UIButton::TextureHover': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'UI::UIButton'
+  (compiling source file '/UI.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\UI\UI.cpp(101,21): warning C4251: 'UI::UIButton::TexturePressed': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'UI::UIButton'
+  (compiling source file '/UI.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\UI\UI.cpp(102,31): warning C4251: 'UI::UIButton::OnClickCallback': 'std::function<void (void)>' needs to have dll-interface to be used by clients of 'UI::UIButton'
+  (compiling source file '/UI.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\functional(1221,7):
+      see declaration of 'std::function<void (void)>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\UI\UI.cpp(154,31): warning C4251: 'UI::InventoryWindow::m_items': 'std::vector<uint32_t,std::allocator<uint32_t>>' needs to have dll-interface to be used by clients of 'UI::InventoryWindow'
+  (compiling source file '/UI.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<uint32_t,std::allocator<uint32_t>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\UI\UI.cpp(183,30): warning C4251: 'UI::ChatWindow::m_messages': 'std::vector<UI::ChatWindow::ChatMsg,std::allocator<UI::ChatWindow::ChatMsg>>' needs to have dll-interface to be used by clients of 'UI::ChatWindow'
+  (compiling source file '/UI.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<UI::ChatWindow::ChatMsg,std::allocator<UI::ChatWindow::ChatMsg>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\UI\UI.cpp(206,21): warning C4251: 'UI::NpcDialogWindow::m_text': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'UI::NpcDialogWindow'
+  (compiling source file '/UI.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\UI\UI.cpp(232,42): warning C4251: 'UI::UIManager::Inventory': 'std::shared_ptr<UI::InventoryWindow>' needs to have dll-interface to be used by clients of 'UI::UIManager'
+  (compiling source file '/UI.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\memory(1588,7):
+      see declaration of 'std::shared_ptr<UI::InventoryWindow>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\UI\UI.cpp(233,37): warning C4251: 'UI::UIManager::Chat': 'std::shared_ptr<UI::ChatWindow>' needs to have dll-interface to be used by clients of 'UI::UIManager'
+  (compiling source file '/UI.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\memory(1588,7):
+      see declaration of 'std::shared_ptr<UI::ChatWindow>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\UI\UI.cpp(234,42): warning C4251: 'UI::UIManager::NpcDialog': 'std::shared_ptr<UI::NpcDialogWindow>' needs to have dll-interface to be used by clients of 'UI::UIManager'
+  (compiling source file '/UI.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\memory(1588,7):
+      see declaration of 'std::shared_ptr<UI::NpcDialogWindow>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\UI\UI.cpp(269,49): warning C4251: 'UI::UIManager::m_windows': 'std::vector<std::shared_ptr<UI::UIElement>,std::allocator<std::shared_ptr<UI::UIElement>>>' needs to have dll-interface to be used by clients of 'UI::UIManager'
+  (compiling source file '/UI.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<std::shared_ptr<UI::UIElement>,std::allocator<std::shared_ptr<UI::UIElement>>>'
+  
+     Creating library D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\UI.lib and object D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\UI.exp
+  UI.vcxproj -> D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\UI.dll

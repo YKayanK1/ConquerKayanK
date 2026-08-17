@@ -418,6 +418,9 @@ namespace Graphics {
                 ctx->VSSetConstantBuffers(0, 1, constantBuffer.GetAddressOf());
 
                 std::string cacheKey = phy.name + "_" + std::to_string(phy.vertices.size()) + "_" + std::to_string(phy.indices.size());
+                if (!phy.vertices.empty()) {
+                    cacheKey += "_" + std::to_string(phy.vertices[0].px) + "_" + std::to_string(phy.vertices[0].py) + "_" + std::to_string(phy.vertices[0].pz);
+                }
 
                 if (m_meshCache.find(cacheKey) == m_meshCache.end()) {
                     MeshCache cache;
@@ -572,7 +575,6 @@ namespace Graphics {
             ctx->OMSetBlendState(blendStateAlpha.Get(), nullptr, 0xFFFFFFFF);
         }
 
-        // [NOVO] Renderizador da Matemática de Rastro (Ribbons) implementada direto na GPU!
         void DrawShapes(const Resource::C3Model& model, ShapeRenderState& state, float x, float y, int textureId, int frame, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame, int colorEnable, bool forceLocal) {
             if (model.shapes.empty()) return;
             const auto& shape = model.shapes[0];
@@ -593,7 +595,6 @@ namespace Graphics {
             DirectX::XMMATRIX attachmentMat = DirectX::XMMatrixIdentity();
             if (parentModel != nullptr && linkBoneIndex >= 0 && linkBoneIndex < (int)parentModel->motions.size()) {
                 if (parentModel->motions[linkBoneIndex].boneCount > 0) {
-                    // Pega exatamente a posição do osso da mão no momento do ataque
                     attachmentMat = GetInterpolatedBone(parentModel->motions[linkBoneIndex], 0, parentFrame);
                 }
             }
@@ -601,7 +602,6 @@ namespace Graphics {
             DirectX::XMMATRIX world = localPitch * attachmentMat * rotZ * rotX * modelScale * DirectX::XMMatrixTranslation(x, y, 0.0f);
             DirectX::XMMATRIX mm = forceLocal ? DirectX::XMMatrixIdentity() : world;
 
-            // Extraindo a Base e a Ponta da Espada de dentro da malha do arquivo .C3
             auto p0 = shape.lines[0].points[0];
             auto p1 = shape.lines[0].points.size() > 1 ? shape.lines[0].points[1] : p0;
 
@@ -636,7 +636,6 @@ namespace Graphics {
                 state.vb[b + 4].u = u; state.vb[b + 4].v = 1;
                 };
 
-            // A Mágica do Ring Buffer
             if (state.isFirst) {
                 for (auto& v : state.vb) { v.px = v.py = v.pz = 0; v.a = 0; }
                 state.isFirst = false;
@@ -672,7 +671,6 @@ namespace Graphics {
                 }
                 WriteSegment(fVecA, fVecB, currentA, currentB);
 
-                // O Fade Out (A fita some no final)
                 float uvStep = 0.9f / state.segCount;
                 float u = state.segCount * uvStep + 0.05f;
 
@@ -683,7 +681,6 @@ namespace Graphics {
             state.lastAx = fVecA.x; state.lastAy = fVecA.y; state.lastAz = fVecA.z;
             state.lastBx = fVecB.x; state.lastBy = fVecB.y; state.lastBz = fVecB.z;
 
-            // Envia a fita pra placa de vídeo
             ctx->OMSetDepthStencilState(depthState2D.Get(), 0);
             ApplyBlendState(adb, colorEnable);
 

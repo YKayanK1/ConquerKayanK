@@ -1,4 +1,5 @@
-﻿  Audio.cpp
+﻿  pch.cpp
+  Audio.cpp
 D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Audio\miniaudio.h(81528,82): warning C4244: '=': conversion from 'ma_uint64' to 'ma_uint32', possible loss of data
   (compiling source file '/Audio.cpp')
   

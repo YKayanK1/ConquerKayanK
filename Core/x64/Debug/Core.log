@@ -1,0 +1,78 @@
+﻿  pch.cpp
+  Core.cpp
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(78,20): warning C4251: 'Core::Logger::m_mutex': 'std::mutex' needs to have dll-interface to be used by clients of 'Core::Logger'
+  (compiling source file '/Core.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\mutex(98,19):
+      see declaration of 'std::mutex'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(79,23): warning C4251: 'Core::Logger::m_fileStream': 'std::basic_ofstream<char,std::char_traits<char>>' needs to have dll-interface to be used by clients of 'Core::Logger'
+  (compiling source file '/Core.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\fstream(171,7):
+      see declaration of 'std::basic_ofstream<char,std::char_traits<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(117,33): warning C4251: 'Core::Math::Matrix::m': 'DirectX::XMFLOAT4X4' needs to have dll-interface to be used by clients of 'Core::Math::Matrix'
+  (compiling source file '/Core.cpp')
+      C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\DirectXMath.h(962,12):
+      see declaration of 'DirectX::XMFLOAT4X4'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(148,38): warning C4251: 'Core::Math::Frustum::dxFrustum': 'DirectX::BoundingFrustum' needs to have dll-interface to be used by clients of 'Core::Math::Frustum'
+  (compiling source file '/Core.cpp')
+      C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\DirectXCollision.h(233,12):
+      see declaration of 'DirectX::BoundingFrustum'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(213,34): warning C4251: 'Core::JobSystem::m_workers': 'std::vector<std::thread,std::allocator<std::thread>>' needs to have dll-interface to be used by clients of 'Core::JobSystem'
+  (compiling source file '/Core.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<std::thread,std::allocator<std::thread>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(214,43): warning C4251: 'Core::JobSystem::m_tasks': 'std::queue<std::function<void (void)>,std::deque<std::function<void (void)>,std::allocator<std::function<void (void)>>>>' needs to have dll-interface to be used by clients of 'Core::JobSystem'
+  (compiling source file '/Core.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\queue(35,7):
+      see declaration of 'std::queue<std::function<void (void)>,std::deque<std::function<void (void)>,std::allocator<std::function<void (void)>>>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(215,20): warning C4251: 'Core::JobSystem::m_queueMutex': 'std::mutex' needs to have dll-interface to be used by clients of 'Core::JobSystem'
+  (compiling source file '/Core.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\mutex(98,19):
+      see declaration of 'std::mutex'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(216,33): warning C4251: 'Core::JobSystem::m_condition': 'std::condition_variable' needs to have dll-interface to be used by clients of 'Core::JobSystem'
+  (compiling source file '/Core.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\mutex(512,19):
+      see declaration of 'std::condition_variable'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(254,54): warning C4251: 'Core::Configuration::m_configs': 'std::unordered_map<std::string,std::string,std::hash<std::string>,std::equal_to<std::string>,std::allocator<std::pair<const std::string,std::string>>>' needs to have dll-interface to be used by clients of 'Core::Configuration'
+  (compiling source file '/Core.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\unordered_map(58,7):
+      see declaration of 'std::unordered_map<std::string,std::string,std::hash<std::string>,std::equal_to<std::string>,std::allocator<std::pair<const std::string,std::string>>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(282,40): warning C4251: 'Core::MemoryPool<T>::m_pool': 'std::queue<std::unique_ptr<_Ty,std::default_delete<_Ty>>,std::deque<std::unique_ptr<_Ty,std::default_delete<_Ty>>,std::allocator<std::unique_ptr<_Ty,std::default_delete<_Ty>>>>>' needs to have dll-interface to be used by clients of 'Core::MemoryPool<T>'
+  (compiling source file '/Core.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\queue(35,7):
+      see declaration of 'std::queue<std::unique_ptr<_Ty,std::default_delete<_Ty>>,std::deque<std::unique_ptr<_Ty,std::default_delete<_Ty>>,std::allocator<std::unique_ptr<_Ty,std::default_delete<_Ty>>>>>'
+      D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(282,40):
+      the template instantiation context (the oldest one first) is
+          D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(258,20):
+          while compiling class template 'Core::MemoryPool'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(283,20): warning C4251: 'Core::MemoryPool<T>::m_mutex': 'std::mutex' needs to have dll-interface to be used by clients of 'Core::MemoryPool<T>'
+  (compiling source file '/Core.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\mutex(98,19):
+      see declaration of 'std::mutex'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(305,73): warning C4251: 'Core::EventDispatcher::m_listeners': 'std::unordered_map<std::type_index,std::vector<Core::EventDispatcher::EventCallback,std::allocator<Core::EventDispatcher::EventCallback>>,std::hash<std::type_index>,std::equal_to<std::type_index>,std::allocator<std::pair<const std::type_index,std::vector<Core::EventDispatcher::EventCallback,std::allocator<Core::EventDispatcher::EventCallback>>>>>' needs to have dll-interface to be used by clients of 'Core::EventDispatcher'
+  (compiling source file '/Core.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\unordered_map(58,7):
+      see declaration of 'std::unordered_map<std::type_index,std::vector<Core::EventDispatcher::EventCallback,std::allocator<Core::EventDispatcher::EventCallback>>,std::hash<std::type_index>,std::equal_to<std::type_index>,std::allocator<std::pair<const std::type_index,std::vector<Core::EventDispatcher::EventCallback,std::allocator<Core::EventDispatcher::EventCallback>>>>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(328,43): warning C4251: 'Core::InputManager::m_keyStates': 'std::unordered_map<Core::KeyCode,bool,std::hash<Core::KeyCode>,std::equal_to<Core::KeyCode>,std::allocator<std::pair<const Core::KeyCode,bool>>>' needs to have dll-interface to be used by clients of 'Core::InputManager'
+  (compiling source file '/Core.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\unordered_map(58,7):
+      see declaration of 'std::unordered_map<Core::KeyCode,bool,std::hash<Core::KeyCode>,std::equal_to<Core::KeyCode>,std::allocator<std::pair<const Core::KeyCode,bool>>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Core\Core.cpp(345,69): warning C4251: 'Core::Timer::m_startTime': 'std::chrono::time_point<std::chrono::steady_clock,std::chrono::nanoseconds>' needs to have dll-interface to be used by clients of 'Core::Timer'
+  (compiling source file '/Core.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\__msvc_chrono.hpp(223,11):
+      see declaration of 'std::chrono::time_point<std::chrono::steady_clock,std::chrono::nanoseconds>'
+  
+     Creating library D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Core.lib and object D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Core.exp
+  Core.vcxproj -> D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Core.dll

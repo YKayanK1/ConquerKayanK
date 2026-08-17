@@ -12,22 +12,49 @@
 
 namespace Resource {
 
-    // [NOVO] Leitor Binário Perfeito do TME baseado na sua análise Hexadecimal!
+    static std::unordered_map<std::string, std::string> ParseActionSoundData(const std::vector<uint8_t>& data) {
+        std::unordered_map<std::string, std::string> map;
+        if (data.empty()) return map;
+
+        std::string content((char*)data.data(), data.size());
+        std::istringstream iss(content);
+        std::string line;
+
+        while (std::getline(iss, line)) {
+            line.erase(0, line.find_first_not_of(" \r\n\t"));
+            line.erase(line.find_last_not_of(" \r\n\t") + 1);
+            if (line.empty() || line[0] == ';' || line[0] == '#') continue;
+
+            size_t eqPos = line.find('=');
+            if (eqPos != std::string::npos) {
+                std::string keyStr = line.substr(0, eqPos);
+                std::string valStr = line.substr(eqPos + 1);
+
+                for (auto& c : valStr) {
+                    if (c == '/') c = '\\';
+                }
+
+                map[keyStr] = valStr;
+            }
+        }
+        return map;
+    }
+
     static TMEData ParseTMEDataBinary(const std::vector<uint8_t>& data) {
         TMEData tme;
         if (data.empty()) return tme;
 
         BinaryReader br(data);
-        uint32_t count = br.Read<uint32_t>(); // O "0D 00 00 00" (13) do FastBlade
+        uint32_t count = br.Read<uint32_t>();
 
         for (uint32_t i = 0; i < count; i++) {
-            if (!br.CanRead(144)) break; // Proteção contra arquivos corrompidos
+            if (!br.CanRead(144)) break;
 
             TMENode node;
-            node.effectName = br.ReadString(128); // Lê o "swordgas-s10" e ignora o lixo "cd cd cd"
-            node.delay = br.Read<uint32_t>();     // O delay da onda
+            node.effectName = br.ReadString(128);
+            node.delay = br.Read<uint32_t>();
             node.unknown1 = br.Read<uint32_t>();
-            node.distance = br.Read<uint32_t>();  // A distância do boneco (60, 92, 124...)
+            node.distance = br.Read<uint32_t>();
             node.unknown2 = br.Read<uint32_t>();
 
             tme.nodes.push_back(node);

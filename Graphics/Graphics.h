@@ -57,7 +57,6 @@ namespace Graphics {
 
         void DrawParticles(const Resource::C3Model& model, float x, float y, int textureId, int frame, float angle = -0.78539f, float pitch = 0.0f, float scale = 1.0f, int asb = 5, int adb = 6, const Resource::C3Model* parentModel = nullptr, int linkBoneIndex = -1, int parentFrame = 0, int colorEnable = 0);
 
-        // [NOVO] Função para desenhar a fita que corta o ar!
         void DrawShapes(const Resource::C3Model& model, ShapeRenderState& state, float x, float y, int textureId, int frame, float angle = -0.78539f, float pitch = 0.0f, float scale = 1.0f, int asb = 5, int adb = 6, const Resource::C3Model* parentModel = nullptr, int linkBoneIndex = -1, int parentFrame = 0, int colorEnable = 0, bool forceLocal = false);
 
         void* GetD3DDevice();

@@ -178,6 +178,9 @@
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Audio\Audio.vcxproj">
+      <Project>{8ab87975-4962-4c48-a69a-50206d7b5ca0}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\Graphics\Graphics.vcxproj">
       <Project>{02841d0e-0e0c-45e2-a7d0-708e532c3b33}</Project>
     </ProjectReference>

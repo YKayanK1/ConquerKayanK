@@ -2,6 +2,9 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
+      <FullPath>D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Audio.dll</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
       <FullPath>D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Graphics.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>

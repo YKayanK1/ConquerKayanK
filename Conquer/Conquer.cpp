@@ -18,6 +18,8 @@
 #include "../Graphics/Graphics.h"
 #include "../Graphics/Graphics_D3D.h"
 #include "../Resource/Resource.h"
+#include "../Audio/Audio.h"
+
 #include "Engine_Window.h"
 #include "Engine_Math.h"
 #include "Game_Entities.h"
@@ -191,11 +193,13 @@ namespace Game {
 
 class Application {
 public:
+    std::string m_clientPath = "D:\\projetos\\kayank\\5017\\cliente";
     std::string m_currentEffectName = "Nenhum";
 
     Engine::WindowManager m_window;
     Graphics::SceneRenderer m_renderer;
     Resource::Manager m_resource;
+    Audio::Manager m_audio;
 
     Game::PlayerEntity m_player;
     uint32_t m_currentArmetId = 0;
@@ -222,6 +226,7 @@ public:
     std::unordered_map<uint32_t, Resource::ArmorConfig> m_armetConfigs;
     std::unordered_map<uint32_t, Resource::WeaponConfig> m_weaponConfigs;
     std::unordered_map<uint32_t, std::string> m_action3DEffects;
+    std::unordered_map<std::string, std::string> m_actionSounds;
 
     struct LoadedEffectPart {
         Resource::C3Model model;
@@ -248,6 +253,8 @@ public:
         float currentLife = 0.0f;
         float maxLife = 2.0f;
         float baseOffsetY = 0.0f;
+
+        bool isFirstFrame = true;
     };
     std::vector<ActiveEffect> m_activeEffects;
 
@@ -319,6 +326,7 @@ public:
         std::string intoneEffect;
         std::string senderEffect;
         std::string targetEffect;
+        std::string soundPath;
         std::string tmeFile;
         uint32_t actionId;
     };
@@ -349,6 +357,27 @@ public:
     int m_debugTexId = -1;
     int m_debugTexW = 0, m_debugTexH = 0;
     std::wstring m_lastDebugStr = L"";
+
+    void PlayActionSound(uint32_t meshId, uint32_t weaponPrefix, uint32_t actionId) {
+        if (weaponPrefix == 0) {
+            weaponPrefix = 999;
+        }
+
+        std::string key = std::to_string(meshId) + "." + std::to_string(weaponPrefix) + "." + std::to_string(actionId);
+        auto it = m_actionSounds.find(key);
+
+        if (it == m_actionSounds.end() && weaponPrefix != 999) {
+            std::string fallbackKey = std::to_string(meshId) + ".999." + std::to_string(actionId);
+            it = m_actionSounds.find(fallbackKey);
+        }
+
+        if (it != m_actionSounds.end()) {
+            std::string snd = it->second;
+            if (!snd.empty() && snd != "none" && snd != "NULL" && snd != "0") {
+                m_audio.PlaySoundEffect(m_clientPath + "\\" + snd);
+            }
+        }
+    }
 
     void LoadMagicDB() {
         auto data = m_resource.GetFileData("ini\\MagicType.txt");
@@ -384,11 +413,13 @@ public:
                 def.intoneEffect = tokens[n - 13];
                 def.senderEffect = tokens[n - 12];
                 def.targetEffect = tokens[n - 7];
+                def.soundPath = tokens[n - 6];
                 def.tmeFile = tokens[n - 5];
 
                 if (def.intoneEffect == "NULL") def.intoneEffect = "";
                 if (def.senderEffect == "NULL") def.senderEffect = "";
                 if (def.targetEffect == "NULL") def.targetEffect = "";
+                if (def.soundPath == "NULL") def.soundPath = "";
                 if (def.tmeFile == "NULL") def.tmeFile = "";
 
                 if (def.id > 0) {
@@ -474,6 +505,8 @@ public:
         if (!m_window.Create(hInstance, L"Conquer Kayank - Engine Master")) return false;
         m_renderer.Initialize(m_window.m_hWnd, m_window.m_width, m_window.m_height);
 
+        m_audio.Initialize();
+
         m_window.onMouseWheel = [this](int delta) {
             ImGuiIO& io = ImGui::GetIO();
             if (io.WantCaptureMouse) return;
@@ -484,8 +517,7 @@ public:
             if (m_zoom > 3.0f) m_zoom = 3.0f;
             };
 
-        std::string clientPath = "D:\\projetos\\kayank\\5017\\cliente";
-        if (!m_resource.Initialize(clientPath)) return false;
+        if (!m_resource.Initialize(m_clientPath)) return false;
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -514,6 +546,7 @@ public:
         m_armetConfigs = m_resource.ParseArmorIni("ini\\armet.ini");
         m_weaponConfigs = m_resource.ParseWeaponIni("ini\\weapon.ini");
         m_action3DEffects = m_resource.ParseAction3DEffects("ini\\Action3DEffect.ini");
+        m_actionSounds = m_resource.ParseActionSound("ini\\ActionSound.ini");
 
         LoadItemTypes("ini\\itemtype.txt");
         LoadMonsterDB();
@@ -537,7 +570,7 @@ public:
         auto [pTex, pW, pH] = Game::GenerateTextTexture(m_renderer, L"KayanK", RGB(255, 255, 255));
         m_player.nameTexId = pTex; m_player.nameW = pW; m_player.nameH = pH;
 
-        std::string cursorPath = clientPath + "\\data\\Cursor\\Normal.ani";
+        std::string cursorPath = m_clientPath + "\\data\\Cursor\\Normal.ani";
         HCURSOR hCursor = LoadCursorFromFileA(cursorPath.c_str());
         if (hCursor) {
             SetClassLongPtr(m_window.m_hWnd, GCLP_HCURSOR, (LONG_PTR)hCursor);
@@ -791,7 +824,6 @@ public:
         for (const auto& node : tmeParsed.nodes) {
             if (node.effectName.empty()) continue;
 
-            // [CORRIGIDO] Alterado para a escala de 40.0f que você descobriu
             float distTiles = node.distance / 40.0f;
 
             float rad = angle - 1.5708f;
@@ -1419,29 +1451,63 @@ public:
                 if (ImGui::Button("Lancar Magia", ImVec2(-1.0f, 40.0f))) {
                     auto& magic = m_magicDB[magic_idx];
 
-                    if (!magic.intoneEffect.empty()) LoadEffect(magic.intoneEffect, m_player.mapX, m_player.mapY);
-                    if (!magic.senderEffect.empty()) LoadEffect(magic.senderEffect, m_player.mapX, m_player.mapY);
-
-                    if (!magic.tmeFile.empty()) {
-                        LoadTME(magic.tmeFile, m_player.mapX, m_player.mapY, m_player.facingAngle);
-                    }
-
-                    if (!magic.targetEffect.empty() && magic.tmeFile.empty()) {
-                        float rad = m_player.facingAngle - 1.5708f;
-                        float fx = m_player.mapX + std::cos(rad) * 3.0f;
-                        float fy = m_player.mapY + std::sin(rad) * 3.0f;
-                        LoadEffect(magic.targetEffect, fx, fy);
-                    }
-
                     uint32_t finalAction = magic.actionId;
                     if (finalAction == 401) {
                         finalAction = 401 + (rand() % 3);
                     }
-                    m_player.currentAttackAnim = (Game::RoleActionType)finalAction;
 
-                    m_player.isAttacking = true;
-                    m_player.currentFrame = 0;
-                    m_player.currentAttackIndex = finalAction;
+                    if (m_player.isMoving) {
+                        m_player.isMoving = false;
+                        m_player.targetMapX = m_player.mapX;
+                        m_player.targetMapY = m_player.mapY;
+                    }
+
+                    if (m_player.isJumping) {
+                        if (!magic.intoneEffect.empty()) LoadEffect(magic.intoneEffect, m_player.mapX, m_player.mapY);
+                        if (!magic.senderEffect.empty()) LoadEffect(magic.senderEffect, m_player.mapX, m_player.mapY);
+                        if (!magic.soundPath.empty()) m_audio.PlaySoundEffect(m_clientPath + "\\" + magic.soundPath);
+
+                        if (!magic.tmeFile.empty()) LoadTME(magic.tmeFile, m_player.mapX, m_player.mapY, m_player.facingAngle);
+
+                        if (!magic.targetEffect.empty() && magic.tmeFile.empty()) {
+                            float rad = m_player.facingAngle - 1.5708f;
+                            float fx = m_player.mapX + std::cos(rad) * 3.0f;
+                            float fy = m_player.mapY + std::sin(rad) * 3.0f;
+                            LoadEffect(magic.targetEffect, fx, fy);
+                        }
+
+                        m_player.hasQueuedAttack = true;
+                        m_player.queuedAttackAnim = (Game::RoleActionType)finalAction;
+                        m_player.queuedAttackIndex = finalAction;
+                    }
+                    else {
+                        if (!m_player.isAttacking) {
+                            m_player.isAttacking = true;
+                            m_player.currentFrame = 0;
+                            m_player.currentAttackIndex = finalAction;
+                            m_player.currentAttackAnim = (Game::RoleActionType)finalAction;
+
+                            PlayActionSound((uint32_t)m_player.modelType, GetWeaponPrefix(m_player.rightHandWeaponId, m_player.leftHandWeaponId), finalAction);
+                        }
+
+                        if (!magic.intoneEffect.empty()) LoadEffect(magic.intoneEffect, m_player.mapX, m_player.mapY);
+                        if (!magic.senderEffect.empty()) LoadEffect(magic.senderEffect, m_player.mapX, m_player.mapY);
+
+                        if (!magic.soundPath.empty()) {
+                            m_audio.PlaySoundEffect(m_clientPath + "\\" + magic.soundPath);
+                        }
+
+                        if (!magic.tmeFile.empty()) {
+                            LoadTME(magic.tmeFile, m_player.mapX, m_player.mapY, m_player.facingAngle);
+                        }
+
+                        if (!magic.targetEffect.empty() && magic.tmeFile.empty()) {
+                            float rad = m_player.facingAngle - 1.5708f;
+                            float fx = m_player.mapX + std::cos(rad) * 3.0f;
+                            float fy = m_player.mapY + std::sin(rad) * 3.0f;
+                            LoadEffect(magic.targetEffect, fx, fy);
+                        }
+                    }
                 }
             }
             else {
@@ -1639,6 +1705,8 @@ public:
                             m_player.isJumping = true; m_player.isMoving = false;
                             m_player.jumpTimer = 0.0f; m_player.startMapX = m_player.mapX; m_player.startMapY = m_player.mapY;
                             m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.currentFrame = 0;
+
+                            PlayActionSound((uint32_t)m_player.modelType, GetWeaponPrefix(m_player.rightHandWeaponId, m_player.leftHandWeaponId), 130);
                         }
                         else {
                             m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.isMoving = true;
@@ -1668,7 +1736,19 @@ public:
                 m_player.mapX = m_player.targetMapX; m_player.mapY = m_player.targetMapY;
                 m_player.jumpZ = 0.0f; m_player.isJumping = false; m_player.currentFrame = 0;
 
-                if (m_player.hasQueuedAction) {
+                if (m_player.hasQueuedAttack) {
+                    m_player.hasQueuedAttack = false;
+                    m_player.isAttacking = true;
+                    m_player.currentFrame = 0;
+                    m_player.currentAttackIndex = m_player.queuedAttackIndex;
+                    m_player.currentAttackAnim = m_player.queuedAttackAnim;
+
+                    PlayActionSound((uint32_t)m_player.modelType, GetWeaponPrefix(m_player.rightHandWeaponId, m_player.leftHandWeaponId), m_player.queuedAttackIndex);
+
+                    m_player.isAlert = true;
+                    m_player.alertTimer = 5.0f;
+                }
+                else if (m_player.hasQueuedAction) {
                     m_player.hasQueuedAction = false;
                     float qdx = m_player.queuedTargetX - m_player.mapX;
                     float qdy = m_player.queuedTargetY - m_player.mapY;
@@ -1679,6 +1759,8 @@ public:
                         m_player.isJumping = true; m_player.isMoving = false; m_player.jumpTimer = 0.0f;
                         m_player.startMapX = m_player.mapX; m_player.startMapY = m_player.mapY;
                         m_player.targetMapX = m_player.queuedTargetX; m_player.targetMapY = m_player.queuedTargetY;
+
+                        PlayActionSound((uint32_t)m_player.modelType, GetWeaponPrefix(m_player.rightHandWeaponId, m_player.leftHandWeaponId), 130);
                     }
                     else {
                         m_player.targetMapX = m_player.queuedTargetX; m_player.targetMapY = m_player.queuedTargetY;
@@ -1734,6 +1816,9 @@ public:
                         m_player.isAttacking = true;
                         m_player.currentFrame = 0;
                         m_player.currentAttackIndex = 401 + (rand() % 3);
+                        m_player.currentAttackAnim = (Game::RoleActionType)m_player.currentAttackIndex;
+
+                        PlayActionSound((uint32_t)m_player.modelType, GetWeaponPrefix(m_player.rightHandWeaponId, m_player.leftHandWeaponId), m_player.currentAttackIndex);
 
                         m_player.isAlert = true;
                         m_player.alertTimer = 5.0f;
@@ -1767,6 +1852,15 @@ public:
             m_player.currentFrame++;
             m_player.animTimer -= (1.0f / currentAnimSpeed);
 
+            if (m_player.isMoving) {
+                if (m_player.currentFrame % 14 == 0) {
+                    PlayActionSound((uint32_t)m_player.modelType, 999, 120);
+                }
+                else if (m_player.currentFrame % 14 == 7) {
+                    PlayActionSound((uint32_t)m_player.modelType, 999, 121);
+                }
+            }
+
             if (m_player.isAttacking) {
                 if (m_player.currentFrame == 10) {
                     if (m_player.targetMonsterIndex != -1 && m_player.targetMonsterIndex < m_monsters.size()) {
@@ -1791,6 +1885,8 @@ public:
                             mob.animTimer = 0.0f;
                             mob.deathTimer = 0.0f;
                             mob.alpha = 1.0f;
+
+                            PlayActionSound(mob.meshId, 999, 330);
 
                             m_player.targetMonsterIndex = -1;
                             m_player.isChasing = false;
@@ -1961,6 +2057,13 @@ public:
 
         for (auto it = m_activeEffects.begin(); it != m_activeEffects.end(); ) {
             auto& effect = *it;
+
+            if (effect.isFirstFrame) {
+                effect.isFirstFrame = false;
+                ++it;
+                continue;
+            }
+
             float dtMs = deltaTime * 1000.0f;
 
             if (effect.isDamageNumber) {
@@ -1996,7 +2099,6 @@ public:
                     effect.currentFrame++;
                     effect.frameTimer -= interval;
 
-                    // [CORRIGIDO] Lemos os frames exatos do modelo para não cortar a magia no meio!
                     int maxFrames = 0;
                     for (const auto& part : effect.parts) {
                         if (part.model.isValid) {
@@ -2004,8 +2106,9 @@ public:
                             if (!part.model.ptcls.empty()) maxFrames = (std::max)(maxFrames, (int)part.model.ptcls[0].frames.size());
                         }
                     }
-                    if (maxFrames <= 0) maxFrames = 30; // Fallback se não achou nada
+                    if (maxFrames <= 0) maxFrames = 30;
 
+                    // [CORRIGIDO] A Matemática para não resetar o efeito e duplicar a magia!
                     if (effect.currentFrame >= maxFrames) {
                         effect.loopCount++;
 
@@ -2017,7 +2120,7 @@ public:
                                 effect.isWaitingInterval = true;
                                 effect.currentTimer = 0.0f;
                             }
-                            effect.currentFrame = 0;
+                            effect.currentFrame = maxFrames - 1; // Trava ela no último frame pra não piscar!
                         }
                     }
                 }
@@ -2168,7 +2271,12 @@ public:
                                     int eColor = wPart.effectConfig.colorEnable;
 
                                     if (!ep.model.phys.empty()) m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, rightWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true, eColor);
-                                    if (!ep.model.ptcls.empty()) m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, rightWeaponBone, m_player.currentFrame, eColor);
+
+                                    if (!ep.model.ptcls.empty()) {
+                                        int ptclFrame = m_weaponEffectFrame;
+                                        if (ptclFrame >= ep.model.ptcls[0].frames.size()) ptclFrame = ep.model.ptcls[0].frames.size() - 1;
+                                        m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, ptclFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, rightWeaponBone, m_player.currentFrame, eColor);
+                                    }
 
                                     if (m_player.isAttacking && !ep.model.shapes.empty()) {
                                         m_renderer.DrawShapes(ep.model, wPart.shapeStates[i], cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, rightWeaponBone, m_player.currentFrame, eColor, false);
@@ -2192,7 +2300,12 @@ public:
                                     int eColor = wPart.effectConfig.colorEnable;
 
                                     if (!ep.model.phys.empty()) m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, leftWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true, eColor);
-                                    if (!ep.model.ptcls.empty()) m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, leftWeaponBone, m_player.currentFrame, eColor);
+
+                                    if (!ep.model.ptcls.empty()) {
+                                        int ptclFrame = m_weaponEffectFrame;
+                                        if (ptclFrame >= ep.model.ptcls[0].frames.size()) ptclFrame = ep.model.ptcls[0].frames.size() - 1;
+                                        m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, ptclFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, leftWeaponBone, m_player.currentFrame, eColor);
+                                    }
 
                                     if (m_player.isAttacking && !ep.model.shapes.empty()) {
                                         m_renderer.DrawShapes(ep.model, wPart.shapeStates[i], cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, leftWeaponBone, m_player.currentFrame, eColor, false);
@@ -2223,7 +2336,9 @@ public:
                                 m_renderer.DrawMesh3D(part.model, cx + wingOffsetX, cy - (m_player.jumpZ * m_zoom) - wingOffsetY, part.textureId, m_wingFrame, wingRotation, wingPitch, false, m_zoom, mainBodyModel, attachBone, m_player.currentFrame, asb, adb, 1.0f, true, 0);
                             }
                             if (!part.model.ptcls.empty()) {
-                                m_renderer.DrawParticles(part.model, cx + wingOffsetX, cy - (m_player.jumpZ * m_zoom) - wingOffsetY, part.textureId, m_wingFrame, wingRotation, wingPitch, m_zoom, asb, adb, mainBodyModel, attachBone, m_player.currentFrame, 0);
+                                int ptclFrame = m_wingFrame;
+                                if (ptclFrame >= part.model.ptcls[0].frames.size()) ptclFrame = part.model.ptcls[0].frames.size() - 1;
+                                m_renderer.DrawParticles(part.model, cx + wingOffsetX, cy - (m_player.jumpZ * m_zoom) - wingOffsetY, part.textureId, ptclFrame, wingRotation, wingPitch, m_zoom, asb, adb, mainBodyModel, attachBone, m_player.currentFrame, 0);
                             }
                         }
                     }
@@ -2329,13 +2444,18 @@ public:
 
                 if (part.model.isValid) {
                     if (!part.model.phys.empty()) {
-                        m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, false, eScale, nullptr, -1, 0, asb, adb, eAlpha, false, eColor);
+                        // [CORRIGIDO] TRUE para as magias não bugarem o Z-Buffer e desenharem em Ordem!
+                        m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, false, eScale, nullptr, -1, 0, asb, adb, eAlpha, true, eColor);
                     }
                     if (!part.model.ptcls.empty()) {
                         for (auto& ptcl : part.model.ptcls) {
                             ptcl.globalAlpha = eAlpha;
                         }
-                        m_renderer.DrawParticles(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, eScale, asb, adb, nullptr, -1, 0, eColor);
+
+                        int ptclFrame = effect.currentFrame;
+                        if (ptclFrame >= part.model.ptcls[0].frames.size()) ptclFrame = part.model.ptcls[0].frames.size() - 1;
+
+                        m_renderer.DrawParticles(part.model, drawCx, drawCy, part.textureId, ptclFrame, 0.0f, ePitch, eScale, asb, adb, nullptr, -1, 0, eColor);
                     }
                 }
             }
