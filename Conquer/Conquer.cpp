@@ -1,6 +1,6 @@
 // ============================================================================
-    // Conquer Kayank Engine - Master Version
-    // ============================================================================
+// Conquer Kayank Engine - Master Version
+// ============================================================================
 #define _CRT_SECURE_NO_WARNINGS
 #define NOMINMAX
 #include <windows.h>
@@ -208,7 +208,7 @@ public:
     std::vector<Game::SceneObject> m_sceneObjects;
 
     Resource::C3Model m_hairIdleModel, m_hairWalkModel, m_hairJumpModel, m_hairAlertModel;
-    std::unordered_map<int, Resource::C3Model> m_hairAttackModels; // Mapa flexivel pra animações
+    std::unordered_map<int, Resource::C3Model> m_hairAttackModels;
 
     int m_hairTextureId = -1;
 
@@ -270,7 +270,7 @@ public:
         Resource::C3Model walkModel;
         Resource::C3Model jumpModel;
         Resource::C3Model alertModel;
-        std::unordered_map<int, Resource::C3Model> attackModels; // Flexivel
+        std::unordered_map<int, Resource::C3Model> attackModels;
         int textureId = -1;
         int asb = 5;
         int adb = 6;
@@ -316,8 +316,10 @@ public:
         uint32_t id;
         uint32_t level;
         std::string name;
+        std::string intoneEffect;
+        std::string senderEffect;
         std::string targetEffect;
-        std::string groundEffect;
+        std::string tmeFile;
         uint32_t actionId;
     };
     std::vector<MagicDef> m_magicDB;
@@ -365,7 +367,8 @@ public:
                 tokens.push_back(token);
             }
 
-            if (tokens.size() > 41) {
+            size_t n = tokens.size();
+            if (n > 15) {
                 MagicDef def;
                 try { def.id = std::stoul(tokens[0]); }
                 catch (...) { continue; }
@@ -374,12 +377,19 @@ public:
 
                 def.name = tokens[2];
                 std::replace(def.name.begin(), def.name.end(), '~', ' ');
-                def.targetEffect = tokens[41];
 
-                try { def.actionId = std::stoul(tokens[33]); }
-                catch (...) { def.actionId = 401; } // Coluna do ActionId!
+                try { def.actionId = std::stoul(tokens[n - 15]); }
+                catch (...) { def.actionId = 401; }
 
+                def.intoneEffect = tokens[n - 13];
+                def.senderEffect = tokens[n - 12];
+                def.targetEffect = tokens[n - 7];
+                def.tmeFile = tokens[n - 5];
+
+                if (def.intoneEffect == "NULL") def.intoneEffect = "";
+                if (def.senderEffect == "NULL") def.senderEffect = "";
                 if (def.targetEffect == "NULL") def.targetEffect = "";
+                if (def.tmeFile == "NULL") def.tmeFile = "";
 
                 if (def.id > 0) {
                     m_magicDB.push_back(def);
@@ -713,7 +723,7 @@ public:
         return m_monsterCache[key];
     }
 
-    void LoadEffect(const std::string& effectName, float mapX = -1.0f, float mapY = -1.0f, float screenOffsetX = 0.0f, float screenOffsetY = 0.0f, bool isDamage = false) {
+    void LoadEffect(const std::string& effectName, float mapX = -1.0f, float mapY = -1.0f, float screenOffsetX = 0.0f, float screenOffsetY = 0.0f, bool isDamage = false, int overrideDelay = -1) {
         m_currentEffectName = effectName;
 
         auto it = m_effectConfigs.find(effectName);
@@ -728,6 +738,11 @@ public:
 
         ActiveEffect newActiveEffect;
         newActiveEffect.config = config;
+
+        if (overrideDelay >= 0) {
+            newActiveEffect.config.delay = overrideDelay;
+        }
+
         newActiveEffect.mapX = mapX;
         newActiveEffect.mapY = mapY;
         newActiveEffect.screenOffsetX = screenOffsetX;
@@ -738,7 +753,13 @@ public:
         newActiveEffect.currentLife = 0.0f;
         newActiveEffect.maxLife = 2.0f;
 
-        if (config.delay <= 0) newActiveEffect.isWaitingDelay = false;
+        if (newActiveEffect.config.delay <= 0) {
+            newActiveEffect.isWaitingDelay = false;
+        }
+        else {
+            newActiveEffect.isWaitingDelay = true;
+            newActiveEffect.currentTimer = 0.0f;
+        }
 
         for (int i = 0; i < config.amount; i++) {
             if (i >= config.parts.size()) break;
@@ -759,6 +780,26 @@ public:
             newActiveEffect.parts.push_back(newPart);
         }
         m_activeEffects.push_back(newActiveEffect);
+    }
+
+    void LoadTME(const std::string& tmeFile, float startX, float startY, float angle) {
+        if (tmeFile.empty() || tmeFile == "NULL") return;
+
+        Resource::TMEData tmeParsed = m_resource.ParseTME("ini\\tme\\" + tmeFile);
+        if (!tmeParsed.isValid) return;
+
+        for (const auto& node : tmeParsed.nodes) {
+            if (node.effectName.empty()) continue;
+
+            // [CORRIGIDO] Alterado para a escala de 40.0f que você descobriu
+            float distTiles = node.distance / 40.0f;
+
+            float rad = angle - 1.5708f;
+            float targetX = startX + std::cos(rad) * distTiles;
+            float targetY = startY + std::sin(rad) * distTiles;
+
+            LoadEffect(node.effectName, targetX, targetY, 0.0f, 0.0f, false, node.delay);
+        }
     }
 
     void ChangeWing(const std::string& effectName) {
@@ -873,7 +914,6 @@ public:
                     newPart.jumpModel = baseModel; ApplyAnim(newPart.jumpModel, animJump);
                     newPart.alertModel = baseModel; ApplyAnim(newPart.alertModel, animAlert);
 
-                    // [NOVO] Adicionado cache dinâmico de todos os tipos de ataque para Garment
                     int attackTypes[] = { 401, 402, 403, 404, 405, 406, 407, 408, 409, 903 };
                     for (int at : attackTypes) {
                         Resource::C3Model aAnim = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)at);
@@ -1082,6 +1122,7 @@ public:
         Resource::C3Model animWalkL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunL);
         Resource::C3Model animWalkR = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunR);
         Resource::C3Model animJump = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Jump);
+
         Resource::C3Model animAlert = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Alert);
         if (!animAlert.isValid || animAlert.motions.empty()) animAlert = animIdle;
 
@@ -1210,7 +1251,7 @@ public:
         ImGui::SetNextWindowPos(ImVec2(10, 60), ImGuiCond_FirstUseEver); ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
         ImGui::Begin("Painel de Controle KayanK");
 
-        if (ImGui::CollapsingHeader("Personagem (Modelo Base)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("Personagem (Modelo Base)")) {
             const char* sexNames[] = { "Mulher Pequena", "Mulher Alta", "Homem Pequeno", "Homem Alto" };
             int currentSex = (int)m_player.modelType - 1;
             if (currentSex < 0 || currentSex > 3) currentSex = 0;
@@ -1222,7 +1263,7 @@ public:
             }
         }
 
-        if (ImGui::CollapsingHeader("Equipamentos (ItemType.txt)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("Equipamentos (ItemType.txt)")) {
 
             static int armet_idx = 0;
             if (!m_armetList.empty()) {
@@ -1378,19 +1419,29 @@ public:
                 if (ImGui::Button("Lancar Magia", ImVec2(-1.0f, 40.0f))) {
                     auto& magic = m_magicDB[magic_idx];
 
-                    float rad = m_player.facingAngle - 1.5708f;
-                    float fx = m_player.mapX + std::cos(rad) * 3.0f;
-                    float fy = m_player.mapY + std::sin(rad) * 3.0f;
+                    if (!magic.intoneEffect.empty()) LoadEffect(magic.intoneEffect, m_player.mapX, m_player.mapY);
+                    if (!magic.senderEffect.empty()) LoadEffect(magic.senderEffect, m_player.mapX, m_player.mapY);
 
-                    if (!magic.targetEffect.empty()) {
+                    if (!magic.tmeFile.empty()) {
+                        LoadTME(magic.tmeFile, m_player.mapX, m_player.mapY, m_player.facingAngle);
+                    }
+
+                    if (!magic.targetEffect.empty() && magic.tmeFile.empty()) {
+                        float rad = m_player.facingAngle - 1.5708f;
+                        float fx = m_player.mapX + std::cos(rad) * 3.0f;
+                        float fy = m_player.mapY + std::sin(rad) * 3.0f;
                         LoadEffect(magic.targetEffect, fx, fy);
                     }
 
-                    m_player.currentAttackAnim = (Game::RoleActionType)magic.actionId;
+                    uint32_t finalAction = magic.actionId;
+                    if (finalAction == 401) {
+                        finalAction = 401 + (rand() % 3);
+                    }
+                    m_player.currentAttackAnim = (Game::RoleActionType)finalAction;
 
                     m_player.isAttacking = true;
                     m_player.currentFrame = 0;
-                    m_player.currentAttackIndex = magic.actionId;
+                    m_player.currentAttackIndex = finalAction;
                 }
             }
             else {
@@ -1682,8 +1733,7 @@ public:
                     if (!m_player.isAttacking) {
                         m_player.isAttacking = true;
                         m_player.currentFrame = 0;
-                        m_player.currentAttackAnim = Game::RoleActionType::PhysicalAttack_401; // Default
-                        m_player.currentAttackIndex = 401;
+                        m_player.currentAttackIndex = 401 + (rand() % 3);
 
                         m_player.isAlert = true;
                         m_player.alertTimer = 5.0f;
@@ -1946,7 +1996,17 @@ public:
                     effect.currentFrame++;
                     effect.frameTimer -= interval;
 
-                    if (effect.currentFrame >= 30) {
+                    // [CORRIGIDO] Lemos os frames exatos do modelo para não cortar a magia no meio!
+                    int maxFrames = 0;
+                    for (const auto& part : effect.parts) {
+                        if (part.model.isValid) {
+                            if (!part.model.motions.empty()) maxFrames = (std::max)(maxFrames, part.model.motions[0].frameCount);
+                            if (!part.model.ptcls.empty()) maxFrames = (std::max)(maxFrames, (int)part.model.ptcls[0].frames.size());
+                        }
+                    }
+                    if (maxFrames <= 0) maxFrames = 30; // Fallback se não achou nada
+
+                    if (effect.currentFrame >= maxFrames) {
                         effect.loopCount++;
 
                         if (effect.config.loopTime != 99999999 && effect.loopCount >= effect.config.loopTime) {
@@ -2017,7 +2077,6 @@ public:
         for (const auto& node : renderQueue) {
             if (node.type == 0) {
 
-                // Retiramos o 'const' para podermos ler o mapa de magias sem erro de compilação
                 std::vector<LoadedArmorPart>* activeBodyParts = &m_currentArmorParts;
                 if (!m_currentGarmentParts.empty()) {
                     activeBodyParts = &m_currentGarmentParts;
@@ -2026,7 +2085,6 @@ public:
                 Resource::C3Model* mainBodyModel = nullptr;
                 if (!activeBodyParts->empty()) {
                     if (m_player.isAttacking) {
-                        // Verifica com segurança se a animação pedida existe, senão cai pro ataque normal 401
                         if ((*activeBodyParts)[0].attackModels.count(m_player.currentAttackIndex))
                             mainBodyModel = &(*activeBodyParts)[0].attackModels[m_player.currentAttackIndex];
                         else
@@ -2038,7 +2096,6 @@ public:
                     else mainBodyModel = &(*activeBodyParts)[0].idleModel;
                 }
 
-                // [CORRIGIDO] Retirado o 'const' do auto
                 for (auto& part : *activeBodyParts) {
                     Resource::C3Model* activeModel = &part.idleModel;
 
@@ -2072,7 +2129,6 @@ public:
                     if (activeHair->isValid) m_renderer.DrawMesh3D(*activeHair, cx, cy - (m_player.jumpZ * m_zoom), m_hairTextureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom);
                 }
                 else {
-                    // [CORRIGIDO] Retirado o 'const' do auto
                     for (auto& part : m_currentArmetParts) {
                         Resource::C3Model* activeModel = &part.idleModel;
 

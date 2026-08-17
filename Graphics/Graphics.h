@@ -13,7 +13,7 @@
 
 namespace Graphics {
 
-    // [NOVO] Memória do Rastro! Isso será guardado lá no Conquer.cpp para cada arma individualmente!
+    // [NOVO] A Estrutura de Memória do Rastro da Espada (Ribbon / Shape)
     struct ShapeOutVertex {
         float px, py, pz;
         float r, g, b, a;
@@ -29,11 +29,11 @@ namespace Graphics {
         std::vector<ShapeOutVertex> vb;
 
         void Initialize(int segs) {
-            // No C#, SMOOTH é sempre 10. O tamanho do buffer é seg * (10 + 1) * 6 vertices
+            // O C3Studio usa SMOOTH = 10. Tamanho = segs * (10 + 1)
             segCount = segs * 11;
             segCur = 0;
             isFirst = true;
-            vb.resize(segCount * 6);
+            vb.resize(segCount * 6); // 6 vértices por segmento (2 triângulos)
         }
         void Reset() { isFirst = true; }
     };
@@ -57,7 +57,7 @@ namespace Graphics {
 
         void DrawParticles(const Resource::C3Model& model, float x, float y, int textureId, int frame, float angle = -0.78539f, float pitch = 0.0f, float scale = 1.0f, int asb = 5, int adb = 6, const Resource::C3Model* parentModel = nullptr, int linkBoneIndex = -1, int parentFrame = 0, int colorEnable = 0);
 
-        // [NOVO] Renderizador da Cauda da Espada!
+        // [NOVO] Função para desenhar a fita que corta o ar!
         void DrawShapes(const Resource::C3Model& model, ShapeRenderState& state, float x, float y, int textureId, int frame, float angle = -0.78539f, float pitch = 0.0f, float scale = 1.0f, int asb = 5, int adb = 6, const Resource::C3Model* parentModel = nullptr, int linkBoneIndex = -1, int parentFrame = 0, int colorEnable = 0, bool forceLocal = false);
 
         void* GetD3DDevice();

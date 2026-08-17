@@ -59,12 +59,12 @@ namespace Graphics {
         }
     )";
 
-    // [CORRIGIDO] Removi o "discard" manual de pixels pretos. A luz aditiva cuida disso suavemente!
     const char* pixelShader3DCode = R"(
         Texture2D shaderTexture : register(t0); SamplerState sampleType : register(s0);
         struct VOut { float4 position : SV_POSITION; float2 tex : TEXCOORD; float alpha : COLOR; };
         float4 main(VOut input) : SV_TARGET {
             float4 color = shaderTexture.Sample(sampleType, input.tex);
+            if (color.r < 0.05f && color.g < 0.05f && color.b < 0.05f) discard;
             clip(color.a - 0.05f); 
             return float4(color.rgb, color.a * input.alpha); 
         }
@@ -80,12 +80,12 @@ namespace Graphics {
         }
     )";
 
-    // [CORRIGIDO] Removi o "discard" manual daqui também!
     const char* pixelShaderPtclCode = R"(
         Texture2D shaderTexture : register(t0); SamplerState sampleType : register(s0);
         struct VOut { float4 position : SV_POSITION; float4 color : COLOR; float2 tex : TEXCOORD; };
         float4 main(VOut input) : SV_TARGET {
             float4 texColor = shaderTexture.Sample(sampleType, input.tex);
+            if (texColor.r < 0.05f && texColor.g < 0.05f && texColor.b < 0.05f) discard;
             return texColor * input.color; 
         }
     )";
@@ -94,7 +94,6 @@ namespace Graphics {
     struct ConstantBuffer { DirectX::XMMATRIX WVP; DirectX::XMMATRIX Bones[128]; int HasAnimation; float Alpha; DirectX::XMFLOAT2 padding; };
     struct VertexPtcl { DirectX::XMFLOAT3 Pos; DirectX::XMFLOAT4 Color; DirectX::XMFLOAT2 Tex; };
 
-    /* STREAMING_CHUNK:Inicializando Blending States... */
     class MasterRenderer {
     public:
         Microsoft::WRL::ComPtr<ID3D11Buffer> vb2D;
@@ -263,10 +262,8 @@ namespace Graphics {
             }
         }
 
-        /* STREAMING_CHUNK: Aplicando o ColorEnable na seleção de Luz... */
         void ApplyBlendState(int adb, int colorEnable) {
             auto ctx = D3DContext::GetInstance().context;
-            // Se for adb=2 ou adb=4, OU se o script mandar (ColorEnable=1), liga o Brilho Aditivo!
             if (adb == 2 || adb == 4 || colorEnable == 1) {
                 ctx->OMSetBlendState(blendStateAdditive.Get(), nullptr, 0xFFFFFFFF);
             }
@@ -344,7 +341,6 @@ namespace Graphics {
                 ctx->OMSetDepthStencilState(depthState3D.Get(), 0);
             }
 
-            // [NOVO] Adicionado suporte ao ColorEnable para malhas 3D
             ApplyBlendState(adb, colorEnable);
 
             DirectX::XMMATRIX ortho = DirectX::XMMatrixOrthographicOffCenterLH(
@@ -576,7 +572,7 @@ namespace Graphics {
             ctx->OMSetBlendState(blendStateAlpha.Get(), nullptr, 0xFFFFFFFF);
         }
 
-        /* STREAMING_CHUNK: Implementando a Lógica Espetacular dos Ribbons (Shapes)... */
+        // [NOVO] Renderizador da Matemática de Rastro (Ribbons) implementada direto na GPU!
         void DrawShapes(const Resource::C3Model& model, ShapeRenderState& state, float x, float y, int textureId, int frame, float angle, float pitch, float scale, int asb, int adb, const Resource::C3Model* parentModel, int linkBoneIndex, int parentFrame, int colorEnable, bool forceLocal) {
             if (model.shapes.empty()) return;
             const auto& shape = model.shapes[0];
@@ -597,6 +593,7 @@ namespace Graphics {
             DirectX::XMMATRIX attachmentMat = DirectX::XMMatrixIdentity();
             if (parentModel != nullptr && linkBoneIndex >= 0 && linkBoneIndex < (int)parentModel->motions.size()) {
                 if (parentModel->motions[linkBoneIndex].boneCount > 0) {
+                    // Pega exatamente a posição do osso da mão no momento do ataque
                     attachmentMat = GetInterpolatedBone(parentModel->motions[linkBoneIndex], 0, parentFrame);
                 }
             }
@@ -604,7 +601,7 @@ namespace Graphics {
             DirectX::XMMATRIX world = localPitch * attachmentMat * rotZ * rotX * modelScale * DirectX::XMMatrixTranslation(x, y, 0.0f);
             DirectX::XMMATRIX mm = forceLocal ? DirectX::XMMatrixIdentity() : world;
 
-            // Extraindo as posições globais da base e ponta da espada
+            // Extraindo a Base e a Ponta da Espada de dentro da malha do arquivo .C3
             auto p0 = shape.lines[0].points[0];
             auto p1 = shape.lines[0].points.size() > 1 ? shape.lines[0].points[1] : p0;
 
@@ -615,7 +612,6 @@ namespace Graphics {
             DirectX::XMStoreFloat3(&fVecA, vecA);
             DirectX::XMStoreFloat3(&fVecB, vecB);
 
-            // A Matemática do C3Studio: O Ring Buffer e a Suavização (SMOOTH = 10)
             const int SMOOTH = 10;
 
             auto WriteSegment = [&](const DirectX::XMFLOAT3& a, const DirectX::XMFLOAT3& b, const DirectX::XMFLOAT3& prevA, const DirectX::XMFLOAT3& prevB) {
@@ -640,6 +636,7 @@ namespace Graphics {
                 state.vb[b + 4].u = u; state.vb[b + 4].v = 1;
                 };
 
+            // A Mágica do Ring Buffer
             if (state.isFirst) {
                 for (auto& v : state.vb) { v.px = v.py = v.pz = 0; v.a = 0; }
                 state.isFirst = false;
@@ -675,7 +672,7 @@ namespace Graphics {
                 }
                 WriteSegment(fVecA, fVecB, currentA, currentB);
 
-                // Update UVs para fazer o efeito rastro invisível no final
+                // O Fade Out (A fita some no final)
                 float uvStep = 0.9f / state.segCount;
                 float u = state.segCount * uvStep + 0.05f;
 
@@ -686,7 +683,7 @@ namespace Graphics {
             state.lastAx = fVecA.x; state.lastAy = fVecA.y; state.lastAz = fVecA.z;
             state.lastBx = fVecB.x; state.lastBy = fVecB.y; state.lastBz = fVecB.z;
 
-            // Renderizando o Ribbon como Partículas!
+            // Envia a fita pra placa de vídeo
             ctx->OMSetDepthStencilState(depthState2D.Get(), 0);
             ApplyBlendState(adb, colorEnable);
 
@@ -725,7 +722,6 @@ namespace Graphics {
             if (drawCount > 0) {
                 UINT stride = sizeof(VertexPtcl); UINT offset = 0;
                 ctx->IASetVertexBuffers(0, 1, ptclVB.GetAddressOf(), &stride, &offset);
-                // Não usamos index buffer aqui pois os dados já estão triangulados sequencialmente na nossa lista
                 ctx->Draw(drawCount, 0);
             }
 

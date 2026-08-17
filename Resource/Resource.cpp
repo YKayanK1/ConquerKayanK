@@ -1,6 +1,3 @@
-// ============================================================================
-// Conquer Kayank Engine
-// ============================================================================
 #include "pch.h"
 #define NOMINMAX
 #include "Resource.h"
@@ -51,7 +48,6 @@ namespace Resource {
                         pkg->index[pf.fileId] = pf;
                     }
                     m_packages.push_back(pkg);
-                    std::cout << "[LOG] WDF Package Reader (" << relativePkgPath << ") ativado! Indexados " << fileCount << " arquivos.\n";
                 }
                 };
 
@@ -105,7 +101,6 @@ namespace Resource {
             return {};
         }
 
-
         C3Model LoadC3Model(const std::string& c3Path) {
             return ParseC3ModelData(GetFileData(c3Path), c3Path);
         }
@@ -138,14 +133,17 @@ namespace Resource {
             return ParseArmorIniData(GetFileData(path));
         }
 
-        // [NOVO] 
         std::unordered_map<uint32_t, WeaponConfig> ParseWeaponIni(const std::string& path) {
             return ParseWeaponIniData(GetFileData(path));
         }
 
-        // [NOVO] Implementação do leitor
         std::unordered_map<uint32_t, std::string> ParseAction3DEffects(const std::string& path) {
             return ParseAction3DEffectsData(GetFileData(path));
+        }
+
+        // [NOVO] Adicionado o invocador final do TME
+        TMEData ParseTME(const std::string& path) {
+            return ParseTMEDataBinary(GetFileData(path));
         }
     };
 
@@ -164,7 +162,7 @@ namespace Resource {
     std::unordered_map<std::string, EffectConfig> Manager::Parse3DEffects(const std::string& path) { return pImpl->Parse3DEffects(path); }
     std::unordered_map<uint32_t, std::string> Manager::ParseResIni(const std::string& path) { return pImpl->ParseResIni(path); }
     std::unordered_map<uint32_t, ArmorConfig> Manager::ParseArmorIni(const std::string& path) { return pImpl->ParseArmorIni(path); }
-    std::unordered_map<uint32_t, WeaponConfig> Manager::ParseWeaponIni(const std::string& path) { return pImpl->ParseWeaponIni(path); } // [NOVO]
+    std::unordered_map<uint32_t, WeaponConfig> Manager::ParseWeaponIni(const std::string& path) { return pImpl->ParseWeaponIni(path); }
     std::unordered_map<uint32_t, std::string> Manager::ParseAction3DEffects(const std::string& path) { return pImpl->ParseAction3DEffects(path); }
-
+    TMEData Manager::ParseTME(const std::string& path) { return pImpl->ParseTME(path); }
 }

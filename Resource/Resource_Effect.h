@@ -3,6 +3,7 @@
 // ============================================================================
 #pragma once
 #include "Resource.h"
+#include "Resource_Utils.h"
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -11,7 +12,31 @@
 
 namespace Resource {
 
-    /* STREAMING_CHUNK:Lendo o Res.ini principal... */
+    // [NOVO] Leitor Binário Perfeito do TME baseado na sua análise Hexadecimal!
+    static TMEData ParseTMEDataBinary(const std::vector<uint8_t>& data) {
+        TMEData tme;
+        if (data.empty()) return tme;
+
+        BinaryReader br(data);
+        uint32_t count = br.Read<uint32_t>(); // O "0D 00 00 00" (13) do FastBlade
+
+        for (uint32_t i = 0; i < count; i++) {
+            if (!br.CanRead(144)) break; // Proteção contra arquivos corrompidos
+
+            TMENode node;
+            node.effectName = br.ReadString(128); // Lê o "swordgas-s10" e ignora o lixo "cd cd cd"
+            node.delay = br.Read<uint32_t>();     // O delay da onda
+            node.unknown1 = br.Read<uint32_t>();
+            node.distance = br.Read<uint32_t>();  // A distância do boneco (60, 92, 124...)
+            node.unknown2 = br.Read<uint32_t>();
+
+            tme.nodes.push_back(node);
+        }
+
+        tme.isValid = true;
+        return tme;
+    }
+
     static std::unordered_map<uint32_t, std::string> ParseResIniData(const std::vector<uint8_t>& data) {
         std::unordered_map<uint32_t, std::string> map;
         if (data.empty()) return map;
@@ -39,7 +64,6 @@ namespace Resource {
         return map;
     }
 
-    /* STREAMING_CHUNK:Lendo o Weapon.ini com multiplas partes... */
     static std::unordered_map<uint32_t, WeaponConfig> ParseWeaponIniData(const std::vector<uint8_t>& data) {
         std::unordered_map<uint32_t, WeaponConfig> weapons;
         if (data.empty()) return weapons;
@@ -101,7 +125,7 @@ namespace Resource {
         return weapons;
     }
 
-    /* STREAMING_CHUNK:Lendo os Efeitos e Magias... */
+
     static std::unordered_map<std::string, EffectConfig> Parse3DEffectsData(const std::vector<uint8_t>& data) {
         std::unordered_map<std::string, EffectConfig> effects;
         if (data.empty()) return effects;
@@ -170,7 +194,7 @@ namespace Resource {
         return effects;
     }
 
-    /* STREAMING_CHUNK:Lendo o Armor.ini... */
+
     static std::unordered_map<uint32_t, ArmorConfig> ParseArmorIniData(const std::vector<uint8_t>& data) {
         std::unordered_map<uint32_t, ArmorConfig> armors;
         if (data.empty()) return armors;
@@ -232,7 +256,6 @@ namespace Resource {
         return armors;
     }
 
-    /* STREAMING_CHUNK:Lendo os vínculos de brilho nas Armas (Action3DEffect.ini)... */
     static std::unordered_map<uint32_t, std::string> ParseAction3DEffectsData(const std::vector<uint8_t>& data) {
         std::unordered_map<uint32_t, std::string> map;
         if (data.empty()) return map;
@@ -246,14 +269,12 @@ namespace Resource {
             line.erase(line.find_last_not_of(" \r\n\t") + 1);
             if (line.empty() || line[0] == ';' || line[0] == '#') continue;
 
-            // Encontrou o padrão de armas (999.999.)
             if (line.rfind("999.999.", 0) == 0) {
                 size_t eqPos = line.find('=');
                 if (eqPos != std::string::npos) {
                     std::string keyStr = line.substr(8, eqPos - 8);
                     std::string valStr = line.substr(eqPos + 1);
 
-                    // Limpa os pontos (.) para transformar "410.339" em "410339"
                     keyStr.erase(std::remove(keyStr.begin(), keyStr.end(), '.'), keyStr.end());
 
                     try {
