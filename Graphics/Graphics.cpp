@@ -18,15 +18,30 @@
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 
+// [A PONTE INDESTRUTÍVEL] Usando 'extern "C"' o linker do Visual Studio NUNCA mais vai se perder!
+float g_UI_U1 = 0.0f;
+float g_UI_V1 = 0.0f;
+float g_UI_U2 = 1.0f;
+float g_UI_V2 = 1.0f;
+
+extern "C" __declspec(dllexport) void SetSpriteUV(float u1, float v1, float u2, float v2) {
+    g_UI_U1 = u1;
+    g_UI_V1 = v1;
+    g_UI_U2 = u2;
+    g_UI_V2 = v2;
+}
+
 namespace Graphics {
 
     const char* vertexShader2DCode = R"(
-        cbuffer ConstantBuffer : register(b0) { matrix WVP; matrix Bones[128]; int HasAnimation; float Alpha; float2 padding; }
+        cbuffer ConstantBuffer : register(b0) { matrix WVP; matrix Bones[128]; int HasAnimation; float Alpha; float TimeFrame; int UVMode; float4 UVRect; }
         struct VOut { float4 position : SV_POSITION; float2 tex : TEXCOORD; };
         VOut main(float3 pos : POSITION, float2 tex : TEXCOORD) {
             VOut output;
             output.position = mul(float4(pos, 1.0f), WVP);
-            output.tex = tex;
+            // Faz o recorte matemático da imagem!
+            output.tex.x = lerp(UVRect.x, UVRect.z, tex.x);
+            output.tex.y = lerp(UVRect.y, UVRect.w, tex.y);
             return output;
         }
     )";
@@ -41,19 +56,31 @@ namespace Graphics {
     )";
 
     const char* vertexShader3DCode = R"(
-        cbuffer ConstantBuffer : register(b0) { matrix WVP; matrix Bones[128]; int HasAnimation; float Alpha; float2 padding; }
+        cbuffer ConstantBuffer : register(b0) { matrix WVP; matrix Bones[128]; int HasAnimation; float Alpha; float TimeFrame; int UVMode; float4 UVRect; }
         struct VOut { float4 position : SV_POSITION; float2 tex : TEXCOORD; float alpha : COLOR; };
         
         VOut main(float3 pos : POSITION, float2 tex : TEXCOORD, uint2 boneIdx : BLENDINDICES, float2 boneWt : BLENDWEIGHT) {
             VOut output;
+            
             if (HasAnimation == 1) {
                 if (boneWt.x > 0.0f) output.position = mul(float4(pos, 1.0f), Bones[boneIdx.x]);
                 else if (boneWt.y > 0.0f) output.position = mul(float4(pos, 1.0f), Bones[boneIdx.y]);
-                else output.position = mul(float4(pos, 1.0f), WVP);
+                else output.position = mul(float4(pos, 1.0f), WVP); 
             } else {
                 output.position = mul(float4(pos, 1.0f), WVP);
             }
+            
             output.tex = tex;
+            
+            if (UVMode == 1) {
+                int totalFrames = 16;
+                int frameIdx = ((int)(TimeFrame) / 2) % totalFrames; 
+                float col = frameIdx % 4;
+                float row = frameIdx / 4;
+                output.tex.x = (output.tex.x * 0.25f) + (col * 0.25f);
+                output.tex.y = (output.tex.y * 0.25f) + (row * 0.25f);
+            } 
+            
             output.alpha = Alpha; 
             return output;
         }
@@ -71,7 +98,7 @@ namespace Graphics {
     )";
 
     const char* vertexShaderPtclCode = R"(
-        cbuffer ConstantBuffer : register(b0) { matrix WVP; }
+        cbuffer ConstantBuffer : register(b0) { matrix WVP; matrix Bones[128]; int HasAnimation; float Alpha; float TimeFrame; int UVMode; float4 UVRect; }
         struct VOut { float4 position : SV_POSITION; float4 color : COLOR; float2 tex : TEXCOORD; };
         VOut main(float3 pos : POSITION, float4 color : COLOR, float2 tex : TEXCOORD) {
             VOut output;
@@ -91,8 +118,22 @@ namespace Graphics {
     )";
 
     struct Vertex2D { DirectX::XMFLOAT3 Pos; DirectX::XMFLOAT2 Tex; };
-    struct ConstantBuffer { DirectX::XMMATRIX WVP; DirectX::XMMATRIX Bones[128]; int HasAnimation; float Alpha; DirectX::XMFLOAT2 padding; };
+    struct ConstantBuffer { DirectX::XMMATRIX WVP; DirectX::XMMATRIX Bones[128]; int HasAnimation; float Alpha; float TimeFrame; int UVMode; DirectX::XMFLOAT4 UVRect; };
     struct VertexPtcl { DirectX::XMFLOAT3 Pos; DirectX::XMFLOAT4 Color; DirectX::XMFLOAT2 Tex; };
+
+    struct MeshKey {
+        uint32_t vCount;
+        uint32_t iCount;
+        float px, py, pz;
+        bool operator==(const MeshKey& o) const {
+            return vCount == o.vCount && iCount == o.iCount && px == o.px && py == o.py && pz == o.pz;
+        }
+    };
+    struct MeshKeyHash {
+        std::size_t operator()(const MeshKey& k) const {
+            return std::hash<uint32_t>()(k.vCount) ^ (std::hash<uint32_t>()(k.iCount) << 1) ^ (std::hash<float>()(k.px) << 2);
+        }
+    };
 
     class MasterRenderer {
     public:
@@ -122,7 +163,7 @@ namespace Graphics {
             Microsoft::WRL::ComPtr<ID3D11Buffer> ib;
             UINT indexCount;
         };
-        std::unordered_map<std::string, MeshCache> m_meshCache;
+        std::unordered_map<MeshKey, MeshCache, MeshKeyHash> m_meshCache;
 
         void Initialize() {
             auto& d3d = D3DContext::GetInstance();
@@ -200,9 +241,9 @@ namespace Graphics {
             device->CreateDepthStencilState(&dsDesc3D, &depthState3D);
 
             D3D11_DEPTH_STENCIL_DESC dsDescNW = {};
-            dsDescNW.DepthEnable = TRUE;
+            dsDescNW.DepthEnable = FALSE;
             dsDescNW.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
-            dsDescNW.DepthFunc = D3D11_COMPARISON_LESS;
+            dsDescNW.DepthFunc = D3D11_COMPARISON_ALWAYS;
             device->CreateDepthStencilState(&dsDescNW, &depthStateNoWrite);
 
             D3D11_BLEND_DESC blendDesc = {};
@@ -280,8 +321,14 @@ namespace Graphics {
             DirectX::XMMATRIX ortho = DirectX::XMMatrixOrthographicOffCenterLH(0.0f, (float)d3d.screenWidth, (float)d3d.screenHeight, 0.0f, 0.0f, 1.0f);
             DirectX::XMMATRIX world = DirectX::XMMatrixScaling((float)width, (float)height, 1.0f) * DirectX::XMMatrixTranslation((float)x, (float)y, 0.0f);
 
-            ConstantBuffer cb; cb.WVP = DirectX::XMMatrixTranspose(world * ortho);
+            ConstantBuffer cb;
+            cb.WVP = DirectX::XMMatrixTranspose(world * ortho);
             cb.HasAnimation = 0;
+
+            // Consome a Ponte Invisível!
+            cb.UVRect = DirectX::XMFLOAT4(g_UI_U1, g_UI_V1, g_UI_U2, g_UI_V2);
+            g_UI_U1 = 0.0f; g_UI_V1 = 0.0f; g_UI_U2 = 1.0f; g_UI_V2 = 1.0f;
+
             ctx->UpdateSubresource(constantBuffer.Get(), 0, nullptr, &cb, 0, 0);
 
             UINT stride = sizeof(Vertex2D); UINT offset = 0;
@@ -341,7 +388,13 @@ namespace Graphics {
                 ctx->OMSetDepthStencilState(depthState3D.Get(), 0);
             }
 
-            ApplyBlendState(adb, colorEnable);
+            int uvMode = 0;
+            int actualColorEnable = colorEnable;
+            if (colorEnable >= 100) {
+                actualColorEnable = colorEnable % 100;
+            }
+
+            ApplyBlendState(adb, actualColorEnable);
 
             DirectX::XMMATRIX ortho = DirectX::XMMatrixOrthographicOffCenterLH(
                 0.0f, (float)d3d.screenWidth, (float)d3d.screenHeight, 0.0f, -1000.0f, 1000.0f
@@ -366,6 +419,9 @@ namespace Graphics {
             ConstantBuffer cb;
             cb.HasAnimation = 1;
             cb.Alpha = alpha;
+            cb.TimeFrame = (float)frame;
+            cb.UVRect = DirectX::XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f);
+
             ctx->IASetInputLayout(layout3D.Get());
             ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             ctx->VSSetShader(vs3D.Get(), nullptr, 0);
@@ -394,6 +450,13 @@ namespace Graphics {
                     if (nameLower.find("dummy") != std::string::npos || nameLower.find("point") != std::string::npos) continue;
                 }
 
+                cb.UVMode = 0;
+                if (colorEnable >= 100) {
+                    if (nameLower.find("coat") != std::string::npos || nameLower.find("thunder") != std::string::npos || nameLower.find("elec") != std::string::npos) {
+                        cb.UVMode = 1;
+                    }
+                }
+
                 DirectX::XMMATRIX initMat = DirectX::XMLoadFloat4x4((const DirectX::XMFLOAT4X4*)phy.initMatrix.m);
                 cb.WVP = DirectX::XMMatrixTranspose(initMat * world * ortho);
 
@@ -417,12 +480,14 @@ namespace Graphics {
                 ctx->UpdateSubresource(constantBuffer.Get(), 0, nullptr, &cb, 0, 0);
                 ctx->VSSetConstantBuffers(0, 1, constantBuffer.GetAddressOf());
 
-                std::string cacheKey = phy.name + "_" + std::to_string(phy.vertices.size()) + "_" + std::to_string(phy.indices.size());
+                MeshKey key = { (uint32_t)phy.vertices.size(), (uint32_t)phy.indices.size(), 0.0f, 0.0f, 0.0f };
                 if (!phy.vertices.empty()) {
-                    cacheKey += "_" + std::to_string(phy.vertices[0].px) + "_" + std::to_string(phy.vertices[0].py) + "_" + std::to_string(phy.vertices[0].pz);
+                    key.px = phy.vertices[0].px;
+                    key.py = phy.vertices[0].py;
+                    key.pz = phy.vertices[0].pz;
                 }
 
-                if (m_meshCache.find(cacheKey) == m_meshCache.end()) {
+                if (m_meshCache.find(key) == m_meshCache.end()) {
                     MeshCache cache;
                     cache.indexCount = (UINT)phy.indices.size();
 
@@ -440,10 +505,10 @@ namespace Graphics {
                     D3D11_SUBRESOURCE_DATA iinit = {}; iinit.pSysMem = phy.indices.data();
                     d3d.device->CreateBuffer(&ibd, &iinit, &cache.ib);
 
-                    m_meshCache[cacheKey] = cache;
+                    m_meshCache[key] = cache;
                 }
 
-                auto& cache = m_meshCache[cacheKey];
+                auto& cache = m_meshCache[key];
                 UINT stride = sizeof(Resource::PhyVertex);
                 UINT offset = 0;
                 ctx->IASetVertexBuffers(0, 1, cache.vb.GetAddressOf(), &stride, &offset);
@@ -462,7 +527,9 @@ namespace Graphics {
             auto ctx = d3d.context;
 
             ctx->OMSetDepthStencilState(depthState2D.Get(), 0);
-            ApplyBlendState(adb, colorEnable);
+
+            int actualColorEnable = colorEnable % 100;
+            ApplyBlendState(adb, actualColorEnable);
 
             DirectX::XMMATRIX ortho = DirectX::XMMatrixOrthographicOffCenterLH(
                 0.0f, (float)d3d.screenWidth, (float)d3d.screenHeight, 0.0f, -1000.0f, 1000.0f
@@ -486,6 +553,7 @@ namespace Graphics {
 
             ConstantBuffer cb;
             cb.WVP = DirectX::XMMatrixTranspose(ortho);
+            cb.UVRect = DirectX::XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f);
             ctx->UpdateSubresource(constantBuffer.Get(), 0, nullptr, &cb, 0, 0);
 
             ctx->IASetInputLayout(layoutPtcl.Get());
@@ -682,10 +750,13 @@ namespace Graphics {
             state.lastBx = fVecB.x; state.lastBy = fVecB.y; state.lastBz = fVecB.z;
 
             ctx->OMSetDepthStencilState(depthState2D.Get(), 0);
-            ApplyBlendState(adb, colorEnable);
+
+            int actualColorEnable = colorEnable % 100;
+            ApplyBlendState(adb, actualColorEnable);
 
             ConstantBuffer cb;
             cb.WVP = DirectX::XMMatrixTranspose(forceLocal ? (world * ortho) : ortho);
+            cb.UVRect = DirectX::XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f);
             ctx->UpdateSubresource(constantBuffer.Get(), 0, nullptr, &cb, 0, 0);
 
             ctx->IASetInputLayout(layoutPtcl.Get());

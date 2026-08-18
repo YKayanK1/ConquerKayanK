@@ -31,6 +31,9 @@
 #include "backends/imgui_impl_win32.h"
 #include "backends/imgui_impl_dx11.h"
 
+// A Ponte Indestrutível do Linker (Recorte de Interface)
+extern "C" void SetSpriteUV(float u1, float v1, float u2, float v2);
+
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 WNDPROC OriginalWndProc = nullptr;
@@ -39,156 +42,6 @@ LRESULT CALLBACK HookWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
         return true;
     return CallWindowProc(OriginalWndProc, hWnd, msg, wParam, lParam);
-}
-
-namespace Game {
-    std::tuple<int, int, int> GenerateGlowTextTexture(
-        Graphics::SceneRenderer& renderer,
-        const std::wstring& text,
-        COLORREF textColor = RGB(255, 255, 255),
-        COLORREF glowColor = RGB(120, 140, 255),
-        int glowRadius = 10,
-        int fontSize = 32
-    ) {
-        HDC hdc = CreateCompatibleDC(NULL);
-        HFONT hFont = CreateFontW(
-            fontSize, 0, 0, 0, FW_EXTRABOLD, TRUE, TRUE, FALSE,
-            DEFAULT_CHARSET, OUT_OUTLINE_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, VARIABLE_PITCH, L"Arial"
-        );
-        SelectObject(hdc, hFont);
-
-        SIZE size;
-        GetTextExtentPoint32W(hdc, text.c_str(), (int)text.length(), &size);
-
-        int padding = glowRadius + 4;
-        int width = size.cx + padding * 2;
-        int height = size.cy + padding * 2;
-
-        BITMAPINFO bmi = { 0 };
-        bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        bmi.bmiHeader.biWidth = width;
-        bmi.bmiHeader.biHeight = -height;
-        bmi.bmiHeader.biPlanes = 1;
-        bmi.bmiHeader.biBitCount = 32;
-        bmi.bmiHeader.biCompression = BI_RGB;
-
-        void* bits = nullptr;
-        HBITMAP hBitmap = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
-        SelectObject(hdc, hBitmap);
-
-        memset(bits, 0, width * height * 4);
-
-        SetTextColor(hdc, RGB(255, 255, 255));
-        SetBkColor(hdc, RGB(0, 0, 0));
-        SetBkMode(hdc, TRANSPARENT);
-        TextOutW(hdc, padding, padding, text.c_str(), (int)text.length());
-
-        uint8_t* rawPixels = (uint8_t*)bits;
-
-        std::vector<float> glyphMask(width * height, 0.0f);
-        for (int i = 0; i < width * height; i++) {
-            uint8_t r = rawPixels[i * 4 + 2];
-            uint8_t g = rawPixels[i * 4 + 1];
-            uint8_t b = rawPixels[i * 4 + 0];
-            float maxVal = (float)(std::max)({ r, g, b });
-            glyphMask[i] = maxVal / 255.0f;
-        }
-
-        std::vector<float> glowMask(width * height, 0.0f);
-        float glowR = (float)(glowColor & 0xFF);
-        float glowG = (float)((glowColor >> 8) & 0xFF);
-        float glowB = (float)((glowColor >> 16) & 0xFF);
-
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                float maxGlowVal = 0.0f;
-                for (int dy = -glowRadius; dy <= glowRadius; dy++) {
-                    int ny = y + dy;
-                    if (ny < 0 || ny >= height) continue;
-                    for (int dx = -glowRadius; dx <= glowRadius; dx++) {
-                        int nx = x + dx;
-                        if (nx < 0 || nx >= width) continue;
-                        float srcVal = glyphMask[ny * width + nx];
-                        if (srcVal > 0.01f) {
-                            float dist = std::sqrt((float)(dx * dx + dy * dy));
-                            if (dist <= glowRadius) {
-                                float factor = 1.0f - (dist / (float)glowRadius);
-                                float glowVal = srcVal * (factor * factor);
-                                if (glowVal > maxGlowVal) maxGlowVal = glowVal;
-                            }
-                        }
-                    }
-                }
-                glowMask[y * width + x] = maxGlowVal;
-            }
-        }
-
-        std::vector<uint8_t> finalPixels(width * height * 4, 0);
-
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                int idx = y * width + x;
-                float textVal = glyphMask[idx];
-                float auraVal = glowMask[idx];
-
-                float outR = glowR * auraVal;
-                float outG = glowG * auraVal;
-                float outB = glowB * auraVal;
-                float outA = auraVal * 0.90f;
-
-                if (textVal > 0.0f) {
-                    float textR = (float)(textColor & 0xFF);
-                    float textG = (float)((textColor >> 8) & 0xFF);
-                    float textB = (float)((textColor >> 16) & 0xFF);
-                    outR = outR * (1.0f - textVal) + textR * textVal;
-                    outG = outG * (1.0f - textVal) + textG * textVal;
-                    outB = outB * (1.0f - textVal) + textB * textVal;
-                    outA = (std::max)(outA, textVal);
-                }
-
-                int pIdx = idx * 4;
-                finalPixels[pIdx + 0] = (uint8_t)(std::min)(255.0f, outB);
-                finalPixels[pIdx + 1] = (uint8_t)(std::min)(255.0f, outG);
-                finalPixels[pIdx + 2] = (uint8_t)(std::min)(255.0f, outR);
-                finalPixels[pIdx + 3] = (uint8_t)(std::min)(255.0f, outA * 255.0f);
-            }
-        }
-
-        struct DDS_HEADER {
-            uint32_t dwMagic; uint32_t dwSize; uint32_t dwFlags;
-            uint32_t dwHeight; uint32_t dwWidth; uint32_t dwPitchOrLinearSize;
-            uint32_t dwDepth; uint32_t dwMipMapCount; uint32_t dwReserved1[11];
-            struct {
-                uint32_t dwSize; uint32_t dwFlags; uint32_t dwFourCC;
-                uint32_t dwRGBBitCount; uint32_t dwRBitMask; uint32_t dwGBitMask;
-                uint32_t dwBBitMask; uint32_t dwABitMask;
-            } ddspf;
-            uint32_t dwCaps; uint32_t dwCaps2; uint32_t dwCaps3; uint32_t dwCaps4; uint32_t dwReserved2;
-        };
-
-        DDS_HEADER header = { 0 };
-        header.dwMagic = 0x20534444;
-        header.dwSize = 124;
-        header.dwFlags = 0x1 | 0x2 | 0x4 | 0x1000 | 0x20000;
-        header.dwHeight = height; header.dwWidth = width;
-        header.dwPitchOrLinearSize = width * 4;
-        header.ddspf.dwSize = 32; header.ddspf.dwFlags = 0x41;
-        header.ddspf.dwRGBBitCount = 32;
-        header.ddspf.dwRBitMask = 0x00FF0000; header.ddspf.dwGBitMask = 0x0000FF00;
-        header.ddspf.dwBBitMask = 0x000000FF; header.ddspf.dwABitMask = 0xFF000000;
-        header.dwCaps = 0x1000;
-
-        std::vector<uint8_t> ddsFile(sizeof(DDS_HEADER) + finalPixels.size());
-        memcpy(ddsFile.data(), &header, sizeof(DDS_HEADER));
-        memcpy(ddsFile.data() + sizeof(DDS_HEADER), finalPixels.data(), finalPixels.size());
-
-        int texId = renderer.LoadTextureFromMemory(ddsFile.data(), ddsFile.size());
-
-        DeleteObject(hBitmap); DeleteObject(hFont); DeleteDC(hdc);
-
-        return { texId, width, height };
-    }
 }
 
 class Application {
@@ -211,7 +64,8 @@ public:
     std::vector<ExpandedMonsterEntity> m_monsters;
     std::vector<Game::SceneObject> m_sceneObjects;
 
-    Resource::C3Model m_hairIdleModel, m_hairWalkModel, m_hairJumpModel, m_hairAlertModel;
+    // [NOVO] Adicionado o modelo de Correr separado do Andar
+    Resource::C3Model m_hairIdleModel, m_hairWalkModel, m_hairRunModel, m_hairJumpModel, m_hairAlertModel;
     std::unordered_map<int, Resource::C3Model> m_hairAttackModels;
 
     int m_hairTextureId = -1;
@@ -234,6 +88,7 @@ public:
     };
 
     struct ActiveEffect {
+        std::string name;
         Resource::EffectConfig config;
         std::vector<LoadedEffectPart> parts;
         float currentTimer = 0.0f;
@@ -275,6 +130,7 @@ public:
     struct LoadedArmorPart {
         Resource::C3Model idleModel;
         Resource::C3Model walkModel;
+        Resource::C3Model runModel; // [NOVO] Guarda a animação de correr!
         Resource::C3Model jumpModel;
         Resource::C3Model alertModel;
         std::unordered_map<int, Resource::C3Model> attackModels;
@@ -348,9 +204,17 @@ public:
     float m_zoom = 1.0f;
     int m_mouseX = 0, m_mouseY = 0;
 
-    int m_guiMainBarTexId = -1;
-    int m_hpBarFullTexId = -1, m_hpBarEmptyTexId = -1;
-    int m_texHpRed = -1, m_texHpBlack = -1, m_texHpOrange = -1;
+    int m_texMainDialog1 = -1;
+    int m_texMainDialog2 = -1;
+
+    // [NOVO] IDs do Checkbox de Correr/Andar
+    int m_texRunChk1 = -1; // Vermelha (Andar)
+    int m_texRunChk2 = -1; // Amarela (Correr)
+    bool m_isRunning = false; // Começa andando
+
+    int m_texHpRed = -1;
+    int m_texHpBlack = -1;
+    int m_texHpOrange = -1;
 
     int m_frameCount = 0, m_currentFps = 0;
     float m_fpsTimer = 0.0f;
@@ -552,17 +416,17 @@ public:
         LoadMonsterDB();
         LoadMagicDB();
 
-        auto loadGui = [&](const std::vector<std::string>& paths) -> int {
-            for (const auto& p : paths) {
-                auto data = m_resource.GetFileData(p);
-                if (!data.empty()) return m_renderer.LoadTextureFromMemory(data.data(), data.size());
-            }
+        auto loadGuiFile = [&](const std::string& path) -> int {
+            auto data = m_resource.GetFileData(path);
+            if (!data.empty()) return m_renderer.LoadTextureFromMemory(data.data(), data.size());
             return -1;
             };
 
-        m_guiMainBarTexId = loadGui({ "data/gui/main/main.dds", "data/gui/main/main1.dds", "data/gui/main.dds" });
-        m_hpBarEmptyTexId = loadGui({ "data\\main\\ProgressHPA.dds" });
-        m_hpBarFullTexId = loadGui({ "data\\main\\ProgressHP.dds" });
+        m_texMainDialog1 = loadGuiFile("data\\main\\mainDialog1.dds");
+        m_texMainDialog2 = loadGuiFile("data\\main\\mainDialog2.dds");
+        m_texRunChk1 = loadGuiFile("data\\main\\RunChk1.dds");
+        m_texRunChk2 = loadGuiFile("data\\main\\RunChk2.dds");
+
         m_texHpRed = Game::GenerateColorDDS(m_renderer, 220, 20, 20);
         m_texHpBlack = Game::GenerateColorDDS(m_renderer, 15, 15, 15);
         m_texHpOrange = Game::GenerateColorDDS(m_renderer, 255, 140, 0);
@@ -770,6 +634,7 @@ public:
         auto& config = it->second;
 
         ActiveEffect newActiveEffect;
+        newActiveEffect.name = effectName;
         newActiveEffect.config = config;
 
         if (overrideDelay >= 0) {
@@ -888,9 +753,12 @@ public:
             return;
         }
 
+        // [NOVO] Adicionado Fetching dos Modelos L/R separados de Andar e Correr (110 vs 120)
         Resource::C3Model animIdle = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::StandBy);
-        Resource::C3Model animWalkL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunL);
-        Resource::C3Model animWalkR = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunR);
+        Resource::C3Model animWalkL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)110);
+        Resource::C3Model animWalkR = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)111);
+        Resource::C3Model animRunL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)120);
+        Resource::C3Model animRunR = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)121);
         Resource::C3Model animJump = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Jump);
         Resource::C3Model animAlert = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Alert);
         if (!animAlert.isValid || animAlert.motions.empty()) animAlert = animIdle;
@@ -943,6 +811,7 @@ public:
 
                     newPart.idleModel = baseModel; ApplyAnim(newPart.idleModel, animIdle);
                     newPart.walkModel = baseModel; ApplyWalkAnim(newPart.walkModel, animWalkL, animWalkR);
+                    newPart.runModel = baseModel; ApplyWalkAnim(newPart.runModel, animRunL, animRunR); // [NOVO] Adicionado Corrida
                     newPart.jumpModel = baseModel; ApplyAnim(newPart.jumpModel, animJump);
                     newPart.alertModel = baseModel; ApplyAnim(newPart.alertModel, animAlert);
 
@@ -975,8 +844,10 @@ public:
         m_currentArmetId = armetId;
 
         Resource::C3Model animIdle = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::StandBy);
-        Resource::C3Model animWalkL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunL);
-        Resource::C3Model animWalkR = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunR);
+        Resource::C3Model animWalkL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)110);
+        Resource::C3Model animWalkR = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)111);
+        Resource::C3Model animRunL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)120);
+        Resource::C3Model animRunR = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)121);
         Resource::C3Model animJump = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Jump);
         Resource::C3Model animAlert = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Alert);
         if (!animAlert.isValid || animAlert.motions.empty()) animAlert = animIdle;
@@ -1032,6 +903,7 @@ public:
                 if (baseModel.isValid) {
                     newPart.idleModel = baseModel; ApplyAnim(newPart.idleModel, animIdle);
                     newPart.walkModel = baseModel; ApplyWalkAnim(newPart.walkModel, animWalkL, animWalkR);
+                    newPart.runModel = baseModel; ApplyWalkAnim(newPart.runModel, animRunL, animRunR); // [NOVO]
                     newPart.jumpModel = baseModel; ApplyAnim(newPart.jumpModel, animJump);
                     newPart.alertModel = baseModel; ApplyAnim(newPart.alertModel, animAlert);
 
@@ -1151,8 +1023,10 @@ public:
         m_player.armorId = armorId;
 
         Resource::C3Model animIdle = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::StandBy);
-        Resource::C3Model animWalkL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunL);
-        Resource::C3Model animWalkR = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::RunR);
+        Resource::C3Model animWalkL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)110);
+        Resource::C3Model animWalkR = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)111);
+        Resource::C3Model animRunL = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)120);
+        Resource::C3Model animRunR = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)121);
         Resource::C3Model animJump = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Jump);
 
         Resource::C3Model animAlert = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Alert);
@@ -1162,6 +1036,7 @@ public:
         ApplyAnim(m_hairJumpModel, animJump);
         ApplyAnim(m_hairAlertModel, animAlert);
         ApplyWalkAnim(m_hairWalkModel, animWalkL, animWalkR);
+        ApplyWalkAnim(m_hairRunModel, animRunL, animRunR); // [NOVO]
 
         int attackTypes[] = { 401, 402, 403, 404, 405, 406, 407, 408, 409, 903 };
         for (int at : attackTypes) {
@@ -1229,6 +1104,7 @@ public:
 
                     newPart.idleModel = baseModel; ApplyAnim(newPart.idleModel, animIdle);
                     newPart.walkModel = baseModel; ApplyWalkAnim(newPart.walkModel, animWalkL, animWalkR);
+                    newPart.runModel = baseModel;  ApplyWalkAnim(newPart.runModel, animRunL, animRunR); // [NOVO]
                     newPart.jumpModel = baseModel; ApplyAnim(newPart.jumpModel, animJump);
                     newPart.alertModel = baseModel; ApplyAnim(newPart.alertModel, animAlert);
 
@@ -1644,7 +1520,32 @@ public:
             }
         }
 
-        if (hasFocus && isMouseInside && !io.WantCaptureMouse) {
+        // [NOVO] Lógica de Interface vs Jogo (O Bloqueio do Click)
+        bool mouseOnUI = false;
+        int totalW = 1024;
+        int startX = (m_window.m_width - totalW) / 2;
+        int screenBottom = m_window.m_height;
+
+        // Bounding Box da Botinha de Correr (Atualizado com as suas novas coordenadas!)
+        int bootX = startX + 2;
+        int bootY = screenBottom - 120;
+
+        // Se o mouse estiver em cima da botinha (32x32)
+        if (pt.x >= bootX && pt.x <= bootX + 32 && pt.y >= bootY && pt.y <= bootY + 32) {
+            mouseOnUI = true; // Avisa que o mouse tá na interface
+            if (leftClicked) {
+                m_isRunning = !m_isRunning; // Troca entre Andar e Correr!
+                leftClicked = false;        // "Mata" o clique aqui para ele não vazar pro mapa
+            }
+        }
+
+        // Bounding Box Principal da Interface do Conquer (Para não andar por trás dela)
+        if (pt.x >= startX && pt.x <= startX + 1024 && pt.y >= screenBottom - 128 && pt.y <= screenBottom) {
+            mouseOnUI = true;
+        }
+
+        // Se o mouse estiver em cima da Interface, IGNORA A LÓGICA DO MAPA!
+        if (hasFocus && isMouseInside && !io.WantCaptureMouse && !mouseOnUI) {
             if (m_currentDMap.isValid && m_currentPul.isValid) {
                 int puzzlePixelWidth = m_currentPul.horizontalTiles * m_tileSize;
                 int puzzlePixelHeight = m_currentPul.verticalTiles * m_tileSize;
@@ -1797,7 +1698,9 @@ public:
                 else if (m_player.isChasing) {
                     m_player.isMoving = true;
                     m_player.facingAngle = -(std::atan2(dy, dx) - 0.78539f);
-                    float speed = 5.0f;
+
+                    // [NOVO] Chasing respeita o botão de Correr/Andar!
+                    float speed = m_isRunning ? 7.0f : 3.0f;
                     m_player.mapX += (dx / dist) * speed * deltaTime;
                     m_player.mapY += (dy / dist) * speed * deltaTime;
                 }
@@ -1836,28 +1739,32 @@ public:
                 m_player.isMoving = false; m_player.currentFrame = 0;
             }
             else {
-                float speed = 5.0f;
+                // [NOVO] Velocidade atrelada à botinha!
+                float speed = m_isRunning ? 7.0f : 3.0f;
                 m_player.mapX += (dx / dist) * speed * deltaTime;
                 m_player.mapY += (dy / dist) * speed * deltaTime;
             }
         }
 
         m_player.animTimer += deltaTime;
-        float currentAnimSpeed = 20.0f;
+        float currentAnimSpeed = 10.0f;
+
+        // [NOVO] Ajuste de FPS da animação com base se está andando ou correndo
         if (m_player.isJumping) currentAnimSpeed = 15.0f;
-        if (m_player.isAttacking) currentAnimSpeed = 25.0f;
-        if (!m_player.isMoving && !m_player.isJumping && !m_player.isAttacking) currentAnimSpeed = 10.0f;
+        else if (m_player.isAttacking) currentAnimSpeed = 25.0f;
+        else if (m_player.isMoving) currentAnimSpeed = m_isRunning ? 20.0f : 12.0f;
 
         if (m_player.animTimer >= (1.0f / currentAnimSpeed)) {
             m_player.currentFrame++;
             m_player.animTimer -= (1.0f / currentAnimSpeed);
 
             if (m_player.isMoving) {
+                // [NOVO] Toca o som certo de corrida(120/121) ou passo(110/111)
                 if (m_player.currentFrame % 14 == 0) {
-                    PlayActionSound((uint32_t)m_player.modelType, 999, 120);
+                    PlayActionSound((uint32_t)m_player.modelType, 999, m_isRunning ? 120 : 110);
                 }
                 else if (m_player.currentFrame % 14 == 7) {
-                    PlayActionSound((uint32_t)m_player.modelType, 999, 121);
+                    PlayActionSound((uint32_t)m_player.modelType, 999, m_isRunning ? 121 : 111);
                 }
             }
 
@@ -2108,19 +2015,18 @@ public:
                     }
                     if (maxFrames <= 0) maxFrames = 30;
 
-                    // [CORRIGIDO] A Matemática para não resetar o efeito e duplicar a magia!
                     if (effect.currentFrame >= maxFrames) {
                         effect.loopCount++;
 
-                        if (effect.config.loopTime != 99999999 && effect.loopCount >= effect.config.loopTime) {
+                        if (effect.config.loopTime != 0 && effect.loopCount >= effect.config.loopTime) {
                             effect.isFinished = true;
                         }
                         else {
+                            effect.currentFrame = 0;
                             if (effect.config.loopInterval > 0) {
                                 effect.isWaitingInterval = true;
                                 effect.currentTimer = 0.0f;
                             }
-                            effect.currentFrame = maxFrames - 1; // Trava ela no último frame pra não piscar!
                         }
                     }
                 }
@@ -2194,7 +2100,8 @@ public:
                             mainBodyModel = &(*activeBodyParts)[0].attackModels[401];
                     }
                     else if (m_player.isJumping) mainBodyModel = &(*activeBodyParts)[0].jumpModel;
-                    else if (m_player.isMoving) mainBodyModel = &(*activeBodyParts)[0].walkModel;
+                    // [NOVO] Alterna entre as animações do Corpo com base no m_isRunning
+                    else if (m_player.isMoving) mainBodyModel = m_isRunning ? &(*activeBodyParts)[0].runModel : &(*activeBodyParts)[0].walkModel;
                     else if (m_player.isAlert) mainBodyModel = &(*activeBodyParts)[0].alertModel;
                     else mainBodyModel = &(*activeBodyParts)[0].idleModel;
                 }
@@ -2209,7 +2116,8 @@ public:
                             activeModel = &part.attackModels[401];
                     }
                     else if (m_player.isJumping) activeModel = &part.jumpModel;
-                    else if (m_player.isMoving) activeModel = &part.walkModel;
+                    // [NOVO] Alterna as partes secundárias (calça, bota)
+                    else if (m_player.isMoving) activeModel = m_isRunning ? &part.runModel : &part.walkModel;
                     else if (m_player.isAlert) activeModel = &part.alertModel;
 
                     if (activeModel->isValid)
@@ -2226,7 +2134,8 @@ public:
                             activeHair = &m_hairAttackModels[401];
                     }
                     else if (m_player.isJumping) { activeHair = &m_hairJumpModel; }
-                    else if (m_player.isMoving) { activeHair = &m_hairWalkModel; }
+                    // [NOVO] Alterna o cabelo
+                    else if (m_player.isMoving) { activeHair = m_isRunning ? &m_hairRunModel : &m_hairWalkModel; }
                     else if (m_player.isAlert) { activeHair = &m_hairAlertModel; }
 
                     if (activeHair->isValid) m_renderer.DrawMesh3D(*activeHair, cx, cy - (m_player.jumpZ * m_zoom), m_hairTextureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom);
@@ -2242,7 +2151,8 @@ public:
                                 activeModel = &part.attackModels[401];
                         }
                         else if (m_player.isJumping) activeModel = &part.jumpModel;
-                        else if (m_player.isMoving) activeModel = &part.walkModel;
+                        // [NOVO] Alterna o capacete
+                        else if (m_player.isMoving) activeModel = m_isRunning ? &part.runModel : &part.walkModel;
                         else if (m_player.isAlert) activeModel = &part.alertModel;
 
                         if (activeModel->isValid)
@@ -2270,11 +2180,14 @@ public:
                                     int eadb = wPart.effectConfig.parts[i].adb;
                                     int eColor = wPart.effectConfig.colorEnable;
 
-                                    if (!ep.model.phys.empty()) m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, rightWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true, eColor);
+                                    if (!ep.model.phys.empty()) {
+                                        int meshFrame = m_weaponEffectFrame;
+                                        if (!ep.model.motions.empty()) meshFrame %= ep.model.motions[0].frameCount;
+                                        m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, meshFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, rightWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true, eColor);
+                                    }
 
                                     if (!ep.model.ptcls.empty()) {
-                                        int ptclFrame = m_weaponEffectFrame;
-                                        if (ptclFrame >= ep.model.ptcls[0].frames.size()) ptclFrame = ep.model.ptcls[0].frames.size() - 1;
+                                        int ptclFrame = m_weaponEffectFrame % ep.model.ptcls[0].frames.size();
                                         m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, ptclFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, rightWeaponBone, m_player.currentFrame, eColor);
                                     }
 
@@ -2299,11 +2212,14 @@ public:
                                     int eadb = wPart.effectConfig.parts[i].adb;
                                     int eColor = wPart.effectConfig.colorEnable;
 
-                                    if (!ep.model.phys.empty()) m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, m_weaponEffectFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, leftWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true, eColor);
+                                    if (!ep.model.phys.empty()) {
+                                        int meshFrame = m_weaponEffectFrame;
+                                        if (!ep.model.motions.empty()) meshFrame %= ep.model.motions[0].frameCount;
+                                        m_renderer.DrawMesh3D(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, meshFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, leftWeaponBone, m_player.currentFrame, easb, eadb, 1.0f, true, eColor);
+                                    }
 
                                     if (!ep.model.ptcls.empty()) {
-                                        int ptclFrame = m_weaponEffectFrame;
-                                        if (ptclFrame >= ep.model.ptcls[0].frames.size()) ptclFrame = ep.model.ptcls[0].frames.size() - 1;
+                                        int ptclFrame = m_weaponEffectFrame % ep.model.ptcls[0].frames.size();
                                         m_renderer.DrawParticles(ep.model, cx, cy - (m_player.jumpZ * m_zoom), ep.textureId, ptclFrame, m_player.facingAngle, 0.0f, m_zoom, easb, eadb, mainBodyModel, leftWeaponBone, m_player.currentFrame, eColor);
                                     }
 
@@ -2333,11 +2249,12 @@ public:
                             float wingPitch = 1.5708f;
 
                             if (!part.model.phys.empty()) {
-                                m_renderer.DrawMesh3D(part.model, cx + wingOffsetX, cy - (m_player.jumpZ * m_zoom) - wingOffsetY, part.textureId, m_wingFrame, wingRotation, wingPitch, false, m_zoom, mainBodyModel, attachBone, m_player.currentFrame, asb, adb, 1.0f, true, 0);
+                                int meshFrame = m_wingFrame;
+                                if (!part.model.motions.empty()) meshFrame %= part.model.motions[0].frameCount;
+                                m_renderer.DrawMesh3D(part.model, cx + wingOffsetX, cy - (m_player.jumpZ * m_zoom) - wingOffsetY, part.textureId, meshFrame, wingRotation, wingPitch, false, m_zoom, mainBodyModel, attachBone, m_player.currentFrame, asb, adb, 1.0f, true, 0);
                             }
                             if (!part.model.ptcls.empty()) {
-                                int ptclFrame = m_wingFrame;
-                                if (ptclFrame >= part.model.ptcls[0].frames.size()) ptclFrame = part.model.ptcls[0].frames.size() - 1;
+                                int ptclFrame = m_wingFrame % part.model.ptcls[0].frames.size();
                                 m_renderer.DrawParticles(part.model, cx + wingOffsetX, cy - (m_player.jumpZ * m_zoom) - wingOffsetY, part.textureId, ptclFrame, wingRotation, wingPitch, m_zoom, asb, adb, mainBodyModel, attachBone, m_player.currentFrame, 0);
                             }
                         }
@@ -2361,6 +2278,7 @@ public:
                         int hpX = (int)zX - (int)((mobHpBarW * m_zoom) / 2);
                         int hpY = (int)zY - (int)(110 * m_zoom);
 
+                        SetSpriteUV(0.0f, 0.0f, 1.0f, 1.0f); // Previne bugs no HP
                         m_renderer.DrawSprite(m_texHpBlack, hpX - 1, hpY - 1, (int)(mobHpBarW * m_zoom) + 2, (int)(mobHpBarH * m_zoom) + 2);
 
                         float visualRatio = monster.visualHp / (float)monster.maxHp;
@@ -2387,13 +2305,13 @@ public:
                 float drawX = objWorldX - m_cameraX - obj.offsetX; float drawY = objWorldY - m_cameraY - obj.offsetY;
                 float zX = cx + (drawX - cx) * m_zoom; float zY = cy + (drawY - cy) * m_zoom;
                 float zW = obj.width * m_zoom; float zH = obj.height * m_zoom;
+
+                SetSpriteUV(0.0f, 0.0f, 1.0f, 1.0f); // Previne bugs nos objetos
                 m_renderer.DrawSprite(obj.textureId, (int)zX, (int)zY, (int)zW, (int)zH);
             }
         }
 
         for (auto& effect : m_activeEffects) {
-            if (effect.isWaitingDelay || effect.isWaitingInterval || effect.isFinished) continue;
-
             float drawCx = cx;
             float drawCy = cy - (m_player.jumpZ * m_zoom);
 
@@ -2436,26 +2354,58 @@ public:
                 }
             }
 
+            int globalMaxFrames = 0;
+            for (const auto& part : effect.parts) {
+                if (part.model.isValid) {
+                    if (!part.model.motions.empty()) globalMaxFrames = (std::max)(globalMaxFrames, part.model.motions[0].frameCount);
+                    if (!part.model.ptcls.empty()) globalMaxFrames = (std::max)(globalMaxFrames, (int)part.model.ptcls[0].frames.size());
+                }
+            }
+            if (globalMaxFrames <= 0) globalMaxFrames = 30;
+
+            if (effect.config.loopTime != 0 && effect.currentFrame >= globalMaxFrames - 10) {
+                float t = (float)(effect.currentFrame - (globalMaxFrames - 10)) / 10.0f;
+                if (t > 1.0f) t = 1.0f;
+                eAlpha *= (1.0f - t);
+            }
+
             for (size_t i = 0; i < effect.parts.size(); i++) {
                 auto& part = effect.parts[i];
                 int asb = effect.config.parts[i].asb;
                 int adb = effect.config.parts[i].adb;
                 int eColor = effect.config.colorEnable;
 
+                int passColorEnable = eColor;
+                std::string effLower = effect.name;
+                std::transform(effLower.begin(), effLower.end(), effLower.begin(), ::tolower);
+
+                if (i == 0 && (effLower.find("zf2") != std::string::npos || effLower.find("thunder") != std::string::npos)) {
+                    passColorEnable += 100;
+                }
+
                 if (part.model.isValid) {
                     if (!part.model.phys.empty()) {
-                        // [CORRIGIDO] TRUE para as magias não bugarem o Z-Buffer e desenharem em Ordem!
-                        m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, false, eScale, nullptr, -1, 0, asb, adb, eAlpha, true, eColor);
+                        bool drawMesh = true;
+                        if (effect.config.loopTime != 0 && !part.model.motions.empty()) {
+                            if (effect.currentFrame >= part.model.motions[0].frameCount) {
+                                drawMesh = false;
+                            }
+                        }
+                        if (drawMesh) {
+                            m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, false, eScale, nullptr, -1, 0, asb, adb, eAlpha, true, passColorEnable);
+                        }
                     }
                     if (!part.model.ptcls.empty()) {
-                        for (auto& ptcl : part.model.ptcls) {
-                            ptcl.globalAlpha = eAlpha;
+                        bool drawPtcl = true;
+                        if (effect.config.loopTime != 0 && effect.currentFrame >= part.model.ptcls[0].frames.size()) {
+                            drawPtcl = false;
                         }
-
-                        int ptclFrame = effect.currentFrame;
-                        if (ptclFrame >= part.model.ptcls[0].frames.size()) ptclFrame = part.model.ptcls[0].frames.size() - 1;
-
-                        m_renderer.DrawParticles(part.model, drawCx, drawCy, part.textureId, ptclFrame, 0.0f, ePitch, eScale, asb, adb, nullptr, -1, 0, eColor);
+                        if (drawPtcl) {
+                            int ptclFrame = effect.currentFrame;
+                            if (effect.config.loopTime == 0) ptclFrame %= part.model.ptcls[0].frames.size();
+                            for (auto& ptcl : part.model.ptcls) ptcl.globalAlpha = eAlpha;
+                            m_renderer.DrawParticles(part.model, drawCx, drawCy, part.textureId, ptclFrame, 0.0f, ePitch, eScale, asb, adb, nullptr, -1, 0, eColor);
+                        }
                     }
                 }
             }
@@ -2463,27 +2413,30 @@ public:
     }
 
     void DrawGUI() {
-        if (m_guiMainBarTexId != -1) {
-            int barW = 800; int barH = 120;
-            m_renderer.DrawSprite(m_guiMainBarTexId, (m_window.m_width - barW) / 2, m_window.m_height - barH, barW, barH);
+        int totalW = 1024;
+        int startX = (m_window.m_width - totalW) / 2;
+        int screenBottom = m_window.m_height;
+
+        if (m_texMainDialog1 != -1 && m_texMainDialog2 != -1) {
+            SetSpriteUV(0.0f, 0.5f, 1.0f, 1.0f);
+            m_renderer.DrawSprite(m_texMainDialog1, startX, screenBottom - 128, 256, 128);
+
+            SetSpriteUV(0.0f, 0.0f, 1.0f, 0.25f);
+            m_renderer.DrawSprite(m_texMainDialog1, startX + 256, screenBottom - 53, 256, 64);
+
+            SetSpriteUV(0.0f, 0.0f, 1.0f, 0.5f);
+            m_renderer.DrawSprite(m_texMainDialog2, startX + 512, screenBottom - 53, 256, 64);
+
+            SetSpriteUV(0.0f, 0.5f, 1.0f, 1.0f);
+            m_renderer.DrawSprite(m_texMainDialog2, startX + 768, screenBottom - 54, 256, 64);
         }
-        int hpW = 120, hpH = 120, hpX = 20, hpY = m_window.m_height - hpH - 20;
-        if (m_hpBarEmptyTexId != -1) m_renderer.DrawSprite(m_hpBarEmptyTexId, hpX, hpY, hpW, hpH);
-        if (m_hpBarFullTexId != -1) m_renderer.DrawSprite(m_hpBarFullTexId, hpX, hpY, hpW, hpH);
 
-        int hpBarW = 60, hpBarH = 6;
-        int headX = (m_window.m_width - (int)(hpBarW * m_zoom)) / 2;
-        int headY = (m_window.m_height / 2) - (m_player.jumpZ * m_zoom) - (130 * m_zoom);
-
-        if (m_texHpBlack != -1 && m_texHpRed != -1) {
-            m_renderer.DrawSprite(m_texHpBlack, headX - 1, headY - 1, (int)(hpBarW * m_zoom) + 2, (int)(hpBarH * m_zoom) + 2);
-            m_renderer.DrawSprite(m_texHpRed, headX, headY, (int)((hpBarW * 0.8f) * m_zoom), (int)(hpBarH * m_zoom));
-        }
-
-        if (m_player.nameTexId != -1) {
-            int nameX = (m_window.m_width - m_player.nameW) / 2;
-            int nameY = headY - m_player.nameH - 5;
-            m_renderer.DrawSprite(m_player.nameTexId, nameX, nameY, m_player.nameW, m_player.nameH);
+        // [NOVO] Desenhando a Botinha de Correr/Andar dinamicamente!
+        if (m_texRunChk1 != -1 && m_texRunChk2 != -1) {
+            int bootX = startX + 2;
+            int bootY = screenBottom - 120;
+            SetSpriteUV(0.0f, 0.0f, 1.0f, 1.0f);
+            m_renderer.DrawSprite(m_isRunning ? m_texRunChk2 : m_texRunChk1, bootX, bootY, 32, 32);
         }
 
         std::time_t now = std::time(nullptr);
@@ -2504,6 +2457,7 @@ public:
             m_lastDebugStr = currentDebugStr;
         }
 
+        SetSpriteUV(0.0f, 0.0f, 1.0f, 1.0f);
         if (m_debugTexId != -1) m_renderer.DrawSprite(m_debugTexId, 10, 10, m_debugTexW, m_debugTexH);
     }
 
