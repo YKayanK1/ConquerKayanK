@@ -189,7 +189,8 @@ D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Graphics\Graphics.h(29,37): war
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
       see declaration of 'std::vector<Graphics::ShapeOutVertex,std::allocator<Graphics::ShapeOutVertex>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Graphics\Graphics.cpp(284,79): warning C4267: '=': conversion from 'size_t' to 'UINT', possible loss of data
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Graphics\Graphics.cpp(285,79): warning C4267: '=': conversion from 'size_t' to 'UINT', possible loss of data
   (compiling source file '/Graphics.cpp')
   
+     Creating library D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Graphics.lib and object D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Graphics.exp
   Graphics.vcxproj -> D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Graphics.dll

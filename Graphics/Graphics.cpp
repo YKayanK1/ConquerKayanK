@@ -18,7 +18,7 @@
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 
-// [A PONTE INDESTRUTÍVEL] Usando 'extern "C"' o linker do Visual Studio NUNCA mais vai se perder!
+// A Ponte Indestrutível do Linker
 float g_UI_U1 = 0.0f;
 float g_UI_V1 = 0.0f;
 float g_UI_U2 = 1.0f;
@@ -39,7 +39,6 @@ namespace Graphics {
         VOut main(float3 pos : POSITION, float2 tex : TEXCOORD) {
             VOut output;
             output.position = mul(float4(pos, 1.0f), WVP);
-            // Faz o recorte matemático da imagem!
             output.tex.x = lerp(UVRect.x, UVRect.z, tex.x);
             output.tex.y = lerp(UVRect.y, UVRect.w, tex.y);
             return output;
@@ -62,16 +61,18 @@ namespace Graphics {
         VOut main(float3 pos : POSITION, float2 tex : TEXCOORD, uint2 boneIdx : BLENDINDICES, float2 boneWt : BLENDWEIGHT) {
             VOut output;
             
+            // [RESTAURADO DA SUA VERSÃO OLD] Resolve o Tornado Gigante e mantém a Boneca inteira!
             if (HasAnimation == 1) {
                 if (boneWt.x > 0.0f) output.position = mul(float4(pos, 1.0f), Bones[boneIdx.x]);
                 else if (boneWt.y > 0.0f) output.position = mul(float4(pos, 1.0f), Bones[boneIdx.y]);
-                else output.position = mul(float4(pos, 1.0f), WVP); 
+                else output.position = mul(float4(pos, 1.0f), WVP);
             } else {
                 output.position = mul(float4(pos, 1.0f), WVP);
             }
             
             output.tex = tex;
             
+            // Fatiamento 4x4 Ativado apenas para o casaco/raio do mago
             if (UVMode == 1) {
                 int totalFrames = 16;
                 int frameIdx = ((int)(TimeFrame) / 2) % totalFrames; 
@@ -291,6 +292,80 @@ namespace Graphics {
 
         int LoadTextureFromMemory(const uint8_t* data, size_t size) {
             if (!data || size == 0) return -1;
+
+            if (size > 18 && data[2] == 2) {
+                int w = data[12] | (data[13] << 8);
+                int h = data[14] | (data[15] << 8);
+                int bpp = data[16];
+
+                if ((bpp == 24 || bpp == 32) && w > 0 && h > 0 && w < 4096 && h < 4096) {
+                    std::vector<uint8_t> rgba(w * h * 4, 255);
+                    int offset = 18;
+                    bool valid = true;
+                    for (int i = 0; i < w * h; i++) {
+                        if (offset + (bpp / 8) > size) { valid = false; break; }
+                        rgba[i * 4 + 2] = data[offset++];
+                        rgba[i * 4 + 1] = data[offset++];
+                        rgba[i * 4 + 0] = data[offset++];
+                        if (bpp == 32) rgba[i * 4 + 3] = data[offset++];
+                    }
+                    if (valid) {
+                        D3D11_TEXTURE2D_DESC desc = {};
+                        desc.Width = w; desc.Height = h; desc.MipLevels = 1; desc.ArraySize = 1;
+                        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1;
+                        desc.Usage = D3D11_USAGE_DEFAULT; desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+                        D3D11_SUBRESOURCE_DATA initData = {};
+                        initData.pSysMem = rgba.data(); initData.SysMemPitch = w * 4;
+                        Microsoft::WRL::ComPtr<ID3D11Texture2D> tex;
+                        if (SUCCEEDED(D3DContext::GetInstance().device->CreateTexture2D(&desc, &initData, &tex))) {
+                            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+                            if (SUCCEEDED(D3DContext::GetInstance().device->CreateShaderResourceView(tex.Get(), nullptr, &srv))) {
+                                int id = nextTextureId++; textures[id] = srv; return id;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (size > 54 && data[0] == 'B' && data[1] == 'M') {
+                int dataOffset = data[10] | (data[11] << 8) | (data[12] << 16) | (data[13] << 24);
+                int w = data[18] | (data[19] << 8) | (data[20] << 16) | (data[21] << 24);
+                int h = data[22] | (data[23] << 8) | (data[24] << 16) | (data[25] << 24);
+                int bpp = data[28] | (data[29] << 8);
+
+                if ((bpp == 24 || bpp == 32) && w > 0 && h > 0 && w < 4096 && h < 4096) {
+                    std::vector<uint8_t> rgba(w * h * 4, 255);
+                    int rowBytes = ((w * bpp + 31) / 32) * 4;
+                    bool valid = true;
+                    for (int y = 0; y < h; y++) {
+                        int srcY = h - 1 - y;
+                        int offset = dataOffset + srcY * rowBytes;
+                        for (int x = 0; x < w; x++) {
+                            if (offset + (bpp / 8) > size) { valid = false; break; }
+                            rgba[(y * w + x) * 4 + 2] = data[offset++];
+                            rgba[(y * w + x) * 4 + 1] = data[offset++];
+                            rgba[(y * w + x) * 4 + 0] = data[offset++];
+                            if (bpp == 32) rgba[(y * w + x) * 4 + 3] = data[offset++];
+                        }
+                    }
+                    if (valid) {
+                        D3D11_TEXTURE2D_DESC desc = {};
+                        desc.Width = w; desc.Height = h; desc.MipLevels = 1; desc.ArraySize = 1;
+                        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1;
+                        desc.Usage = D3D11_USAGE_DEFAULT; desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+                        D3D11_SUBRESOURCE_DATA initData = {};
+                        initData.pSysMem = rgba.data(); initData.SysMemPitch = w * 4;
+                        Microsoft::WRL::ComPtr<ID3D11Texture2D> tex;
+                        if (SUCCEEDED(D3DContext::GetInstance().device->CreateTexture2D(&desc, &initData, &tex))) {
+                            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+                            if (SUCCEEDED(D3DContext::GetInstance().device->CreateShaderResourceView(tex.Get(), nullptr, &srv))) {
+                                int id = nextTextureId++; textures[id] = srv; return id;
+                            }
+                        }
+                    }
+                }
+            }
+
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> newTexture;
             HRESULT hr = DirectX::CreateDDSTextureFromMemory(D3DContext::GetInstance().device.Get(), data, size, nullptr, newTexture.GetAddressOf());
             if (FAILED(hr)) return -1;
@@ -324,8 +399,6 @@ namespace Graphics {
             ConstantBuffer cb;
             cb.WVP = DirectX::XMMatrixTranspose(world * ortho);
             cb.HasAnimation = 0;
-
-            // Consome a Ponte Invisível!
             cb.UVRect = DirectX::XMFLOAT4(g_UI_U1, g_UI_V1, g_UI_U2, g_UI_V2);
             g_UI_U1 = 0.0f; g_UI_V1 = 0.0f; g_UI_U2 = 1.0f; g_UI_V2 = 1.0f;
 
@@ -388,7 +461,6 @@ namespace Graphics {
                 ctx->OMSetDepthStencilState(depthState3D.Get(), 0);
             }
 
-            int uvMode = 0;
             int actualColorEnable = colorEnable;
             if (colorEnable >= 100) {
                 actualColorEnable = colorEnable % 100;
@@ -452,7 +524,7 @@ namespace Graphics {
 
                 cb.UVMode = 0;
                 if (colorEnable >= 100) {
-                    if (nameLower.find("coat") != std::string::npos || nameLower.find("thunder") != std::string::npos || nameLower.find("elec") != std::string::npos) {
+                    if (nameLower.find("coat") != std::string::npos) {
                         cb.UVMode = 1;
                     }
                 }
