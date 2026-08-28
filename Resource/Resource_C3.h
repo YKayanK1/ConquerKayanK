@@ -50,6 +50,47 @@ namespace Resource {
                 for (int i = 0; i < 3; i++) phy.bboxMin[i] = br.Read<float>();
                 for (int i = 0; i < 3; i++) phy.bboxMax[i] = br.Read<float>();
                 for (int i = 0; i < 16; i++) phy.initMatrix.m[i] = br.Read<float>();
+
+                // Texture atlas row count (e.g. 4 -> 4x4 = 16 tiles), used for multi-part
+                // effects such as the tornado where each C3Frame keyframe below selects a tile.
+                phy.texRow = (int)br.Read<uint32_t>();
+
+                auto readC3Frame = [&br]() {
+                    C3Frame f;
+                    f.frame = br.Read<int32_t>();
+                    f.fParam = br.Read<float>();
+                    f.bParam = br.Read<uint8_t>() != 0;
+                    br.Skip(3);
+                    f.nParam = br.Read<int32_t>();
+                    return f;
+                };
+
+                uint32_t alphaCount = br.Read<uint32_t>();
+                for (uint32_t i = 0; i < alphaCount; i++) phy.alphaKeys.push_back(readC3Frame());
+                uint32_t drawCount = br.Read<uint32_t>();
+                for (uint32_t i = 0; i < drawCount; i++) phy.drawKeys.push_back(readC3Frame());
+                uint32_t changeTexCount = br.Read<uint32_t>();
+                for (uint32_t i = 0; i < changeTexCount; i++) phy.changeTexKeys.push_back(readC3Frame());
+
+                std::string flag1 = br.ReadString(4);
+                if (flag1 == "STEP") {
+                    phy.uvStepX = br.Read<float>(); phy.uvStepY = br.Read<float>();
+                } else br.SkipBack(4);
+
+                std::string flag2 = br.ReadString(4);
+                if (flag2 == "2SID") { phy.twoSided = true; }
+                else br.SkipBack(4);
+
+                std::string flag3 = br.ReadString(5);
+                if (flag3 == "STEP1") {
+                    phy.uvStepX = br.Read<float>(); phy.uvStepY = br.Read<float>();
+                } else br.SkipBack(5);
+
+                std::string flag4 = br.ReadString(5);
+                if (flag4 == "STEP2") {
+                    phy.uvStepX = br.Read<float>(); phy.uvStepY = br.Read<float>();
+                } else br.SkipBack(5);
+
                 model.phys.push_back(phy);
             }
             else if (chunkTag == "MOTI") {

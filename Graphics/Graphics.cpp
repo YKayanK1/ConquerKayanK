@@ -71,17 +71,15 @@ namespace Graphics {
             }
             
             output.tex = tex;
-            
-            // Fatiamento 4x4 Ativado apenas para o casaco/raio do mago
+
+            // Data-driven texture atlas slicing: UVRect is computed on the CPU from the
+            // mesh's TexRow and its ChangeTex keyframe (see C3Phy in Resource_C3.h),
+            // mirroring C3Studio's Phy_Calculate. Generic for any effect (tornado, etc).
             if (UVMode == 1) {
-                int totalFrames = 16;
-                int frameIdx = ((int)(TimeFrame) / 2) % totalFrames; 
-                float col = frameIdx % 4;
-                float row = frameIdx / 4;
-                output.tex.x = (output.tex.x * 0.25f) + (col * 0.25f);
-                output.tex.y = (output.tex.y * 0.25f) + (row * 0.25f);
-            } 
-            
+                output.tex.x = lerp(UVRect.x, UVRect.z, tex.x);
+                output.tex.y = lerp(UVRect.y, UVRect.w, tex.y);
+            }
+
             output.alpha = Alpha; 
             return output;
         }
@@ -522,12 +520,39 @@ namespace Graphics {
                     if (nameLower.find("dummy") != std::string::npos || nameLower.find("point") != std::string::npos) continue;
                 }
 
+                // Data-driven texture atlas + visibility/alpha, mirroring C3Studio's Phy_Calculate.
+                // Uses the ChangeTex keyframe to pick the atlas tile (texRow x texRow grid),
+                // and the Draw keyframe to hide/show the mesh at specific frames.
                 cb.UVMode = 0;
-                if (colorEnable >= 100) {
-                    if (nameLower.find("coat") != std::string::npos) {
+                cb.UVRect = DirectX::XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f);
+                bool meshVisible = true;
+                Resource::C3Phy_ProcessDraw(phy, frame, meshVisible);
+                if (!meshVisible) continue;
+
+                if (phy.texRow > 1) {
+                    int texIndex = 0;
+                    if (Resource::C3Phy_ProcessChangeTex(phy, frame, texIndex)) {
+                        float seg = 1.0f / (float)phy.texRow;
+                        int col = texIndex % phy.texRow;
+                        int row = texIndex / phy.texRow;
                         cb.UVMode = 1;
+                        cb.UVRect = DirectX::XMFLOAT4(col * seg, row * seg, (col + 1) * seg, (row + 1) * seg);
                     }
                 }
+
+                float phyAlpha = 1.0f;
+                if (Resource::C3Phy_ProcessAlpha(phy, frame, phyAlpha)) {
+                    cb.Alpha = alpha * phyAlpha;
+                }
+                else {
+                    cb.Alpha = alpha;
+                }
+
+                // Skip meshes that are fully transparent at this frame. Some effects (e.g. the
+                // tornado's shockwave/flash planes) alternate alpha between 0 and 1 rapidly while
+                // keeping a large scale; drawing them while alpha==0 still overdraws a huge screen
+                // area and causes visible seams/tearing when several such planes overlap.
+                if (cb.Alpha <= 0.01f) continue;
 
                 DirectX::XMMATRIX initMat = DirectX::XMLoadFloat4x4((const DirectX::XMFLOAT4X4*)phy.initMatrix.m);
                 cb.WVP = DirectX::XMMatrixTranspose(initMat * world * ortho);

@@ -120,12 +120,57 @@ namespace Resource {
         float boneWeight[2];
     };
 
+    struct RESOURCE_API C3Frame {
+        int frame = 0;
+        float fParam = 0.0f;
+        bool bParam = false;
+        int nParam = 0;
+    };
+
     struct RESOURCE_API C3Phy {
         std::string name; std::string textureName; int blendCount = 0;
         uint32_t normalVertexCount = 0, alphaVertexCount = 0, normalTriCount = 0, alphaTriCount = 0;
         std::vector<PhyVertex> vertices; std::vector<uint16_t> indices;
         Matrix4x4 initMatrix; float bboxMin[3]; float bboxMax[3];
+
+        // Texture atlas / keyframe animation data (drives multi-part effects like tornadoes)
+        int texRow = 1;
+        float uvStepX = 0.0f, uvStepY = 0.0f;
+        bool twoSided = false;
+        std::vector<C3Frame> alphaKeys;
+        std::vector<C3Frame> drawKeys;
+        std::vector<C3Frame> changeTexKeys;
     };
+
+    // Mirrors C3Studio's Phy_Calculate alpha resolution: interpolates between
+    // surrounding keyframes (or clamps to the nearest one at the ends).
+    // Defined inline (free function) to avoid dllexport/inline-member linkage issues.
+    inline bool C3Phy_ProcessAlpha(const C3Phy& phy, int frame, float& outAlpha) {
+        int s = -1, e = -1;
+        const auto& alphaKeys = phy.alphaKeys;
+        for (int n = 0; n < (int)alphaKeys.size(); n++) {
+            if (alphaKeys[n].frame <= frame) { if (s == -1 || n > s) s = n; }
+            if (alphaKeys[n].frame > frame) { if (e == -1 || n < e) e = n; }
+        }
+        if (s == -1 && e > -1) { outAlpha = alphaKeys[e].fParam; return true; }
+        if (s > -1 && e == -1) { outAlpha = alphaKeys[s].fParam; return true; }
+        if (s > -1 && e > -1) {
+            float t = (float)(frame - alphaKeys[s].frame) / (float)(alphaKeys[e].frame - alphaKeys[s].frame);
+            outAlpha = alphaKeys[s].fParam + t * (alphaKeys[e].fParam - alphaKeys[s].fParam);
+            return true;
+        }
+        return false;
+    }
+
+    inline bool C3Phy_ProcessDraw(const C3Phy& phy, int frame, bool& outVisible) {
+        for (const auto& d : phy.drawKeys) if (d.frame == frame) { outVisible = d.bParam; return true; }
+        return false;
+    }
+
+    inline bool C3Phy_ProcessChangeTex(const C3Phy& phy, int frame, int& outTexIndex) {
+        for (const auto& c : phy.changeTexKeys) if (c.frame == frame) { outTexIndex = c.nParam; return true; }
+        return false;
+    }
 
     struct RESOURCE_API C3Model {
         bool isValid = false;

@@ -1703,6 +1703,49 @@ public:
             }
         }
 
+        if (ImGui::CollapsingHeader("Efeitos (Invocar)")) {
+            static std::vector<std::string> allEffectNames;
+            if (allEffectNames.empty()) {
+                for (auto& pair : m_effectConfigs) allEffectNames.push_back(pair.first);
+                std::sort(allEffectNames.begin(), allEffectNames.end());
+            }
+
+            static char effectFilter[128] = "";
+            ImGui::InputText("Filtrar por nome", effectFilter, IM_ARRAYSIZE(effectFilter));
+
+            static int effect_idx = 0;
+            static std::vector<std::string> filteredEffectNames;
+            filteredEffectNames.clear();
+            std::string filterLower = effectFilter;
+            std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(), ::tolower);
+            for (auto& name : allEffectNames) {
+                std::string nameLower = name;
+                std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
+                if (filterLower.empty() || nameLower.find(filterLower) != std::string::npos) {
+                    filteredEffectNames.push_back(name);
+                }
+            }
+            if (effect_idx >= (int)filteredEffectNames.size()) effect_idx = 0;
+
+            std::string effectPreview = filteredEffectNames.empty() ? "Nenhum efeito encontrado" : filteredEffectNames[effect_idx];
+            if (ImGui::BeginCombo("Lista de Efeitos", effectPreview.c_str())) {
+                for (int n = 0; n < (int)filteredEffectNames.size(); n++) {
+                    const bool is_selected = (effect_idx == n);
+                    if (ImGui::Selectable(filteredEffectNames[n].c_str(), is_selected)) {
+                        effect_idx = n;
+                    }
+                    if (is_selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+
+            if (ImGui::Button("Invocar Efeito ao Lado do Personagem", ImVec2(-1.0f, 40.0f))) {
+                if (!filteredEffectNames.empty()) {
+                    LoadEffect(filteredEffectNames[effect_idx], m_player.mapX + 1.0f, m_player.mapY);
+                }
+            }
+        }
+
         ImGui::End();
     }
 
