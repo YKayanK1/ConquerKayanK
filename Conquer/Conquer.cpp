@@ -253,6 +253,7 @@ public:
         float mapY = -1.0f;
         float screenOffsetX = 0.0f;
         float screenOffsetY = 0.0f;
+        float angle = 0.0f;
 
         bool isDamageNumber = false;
         float currentLife = 0.0f;
@@ -328,6 +329,7 @@ public:
     struct MagicDef {
         uint32_t id;
         uint32_t level;
+        uint32_t sort;
         std::string name;
         std::string intoneEffect;
         std::string senderEffect;
@@ -371,6 +373,37 @@ public:
     int m_texMapChk1 = -1;
     int m_texMapChk2 = -1;
 
+    uint32_t m_selectedSkillId = 0;
+    uint32_t m_selectedSkillLevel = 0;
+    int m_attackSequence = 0;
+
+    // Magias Mid-Air Queue e Hitbox
+    bool m_pendingFacingAngle = false;
+    float m_queuedFacingAngle = 0.0f;
+    uint32_t m_activeCastSkillId = 0;
+    uint32_t m_activeCastSort = 0;
+    float m_activeCastStartX = 0.0f;
+    float m_activeCastStartY = 0.0f;
+    float m_activeCastTargetX = 0.0f;
+    float m_activeCastTargetY = 0.0f;
+
+    int m_texMainImgMagic = -1;
+    int m_texQuerySkillBtnU = -1;
+    int m_texQuerySkillBtnD = -1;
+    bool m_showSkillList = false;
+    int m_skillCurrentPage = 0;
+
+    struct UISkill {
+        uint32_t id;
+        std::string name;
+        uint32_t level;
+        int tooltipTexId = -1;
+        int tooltipW = 0;
+        int tooltipH = 0;
+    };
+    std::vector<UISkill> m_uiSkills;
+    std::unordered_map<uint32_t, int> m_skillIconTexIds;
+
     bool m_isRunning = false;
     bool m_isNpcEquipMode = false;
     bool m_isScreenMove = false;
@@ -388,12 +421,31 @@ public:
     int m_texHpBlack = -1;
     int m_texHpOrange = -1;
     int m_texMpBlue = -1;
+    int m_texProgressHP = -1;
+    int m_texProgressMP = -1;
 
     int m_frameCount = 0, m_currentFps = 0;
     float m_fpsTimer = 0.0f;
     int m_debugTexId = -1;
     int m_debugTexW = 0, m_debugTexH = 0;
     std::wstring m_lastDebugStr = L"";
+
+    // Cálculo exato de Colisão em Linha Reta para Magias Direcionais!
+    float PointToSegmentDistance(float px, float py, float x1, float y1, float x2, float y2) {
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        if (dx == 0.0f && dy == 0.0f) {
+            dx = px - x1; dy = py - y1;
+            return std::sqrt(dx * dx + dy * dy);
+        }
+        float t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
+        t = (std::max)(0.0f, (std::min)(1.0f, t));
+        float closestX = x1 + t * dx;
+        float closestY = y1 + t * dy;
+        dx = px - closestX;
+        dy = py - closestY;
+        return std::sqrt(dx * dx + dy * dy);
+    }
 
     void PlayActionSound(uint32_t meshId, uint32_t weaponPrefix, uint32_t actionId) {
         if (weaponPrefix == 0) {
@@ -438,6 +490,8 @@ public:
                 MagicDef def;
                 try { def.id = std::stoul(tokens[0]); }
                 catch (...) { continue; }
+                try { def.sort = std::stoul(tokens[1]); }
+                catch (...) { def.sort = 0; }
                 try { def.level = std::stoul(tokens[7]); }
                 catch (...) { def.level = 0; }
 
@@ -464,6 +518,64 @@ public:
                 }
             }
         }
+    }
+
+    void LoadMagicIcons() {
+        auto data = m_resource.GetFileData("ani\\Magic.Ani");
+        if (data.empty()) return;
+
+        std::string content((char*)data.data(), data.size());
+        std::istringstream iss(content);
+        std::string line;
+        uint32_t currentId = 0;
+
+        while (std::getline(iss, line)) {
+            if (line.empty()) continue;
+            if (line[0] == '[') {
+                std::string sec = line.substr(1, line.length() - 2);
+                if (sec.find("MagicSkillType") != std::string::npos) {
+                    try { currentId = std::stoul(sec.substr(14)); }
+                    catch (...) { currentId = 0; }
+                }
+                else { currentId = 0; }
+            }
+            else if (currentId != 0 && line.find("Frame0=") != std::string::npos) {
+                std::string path = line.substr(7);
+                if (!path.empty() && path.back() == '\r') path.pop_back();
+                std::replace(path.begin(), path.end(), '/', '\\');
+
+                auto imgData = m_resource.GetFileData(path);
+                if (!imgData.empty()) {
+                    int tex = m_renderer.LoadTextureFromMemory(imgData.data(), imgData.size());
+                    if (tex != -1) m_skillIconTexIds[currentId] = tex;
+                }
+            }
+        }
+
+        m_uiSkills.clear();
+        for (const auto& mag : m_magicDB) {
+            if (m_skillIconTexIds.count(mag.id)) {
+                UISkill uiSkill;
+                uiSkill.id = mag.id;
+                uiSkill.name = mag.name;
+                uiSkill.level = mag.level;
+
+                std::string tooltip = mag.name + " (Lv " + std::to_string(mag.level) + ")";
+                std::wstring wTooltip(tooltip.begin(), tooltip.end());
+                auto texData = Game::GenerateTextTexture(m_renderer, wTooltip, RGB(255, 215, 0));
+
+                uiSkill.tooltipTexId = std::get<0>(texData);
+                uiSkill.tooltipW = std::get<1>(texData);
+                uiSkill.tooltipH = std::get<2>(texData);
+
+                m_uiSkills.push_back(uiSkill);
+            }
+        }
+
+        std::sort(m_uiSkills.begin(), m_uiSkills.end(), [](const UISkill& a, const UISkill& b) {
+            if (a.id == b.id) return a.level < b.level;
+            return a.id < b.id;
+            });
     }
 
     void LoadMonsterDB() {
@@ -647,14 +759,21 @@ public:
         m_texMapChk1 = loadGuiFile("data\\main\\MapChk1.dds");
         m_texMapChk2 = loadGuiFile("data\\main\\MapChk2.dds");
 
+        m_texMainImgMagic = loadGuiFile("data\\main\\MainImgMagic.dds");
+        m_texQuerySkillBtnU = loadGuiFile("data\\main\\QuerySkillBtnU.dds");
+        m_texQuerySkillBtnD = loadGuiFile("data\\main\\QuerySkillBtnD.dds");
+
         m_heroTgaId = loadGuiFile("data\\minimap\\hero0.tga");
+        m_texProgressHP = loadGuiFile("data\\main\\ProgressHP.dds");
+        m_texProgressMP = loadGuiFile("data\\main\\ProgressMP.dds");
+
+        LoadMagicIcons();
 
         m_texHpRed = Game::GenerateColorDDS(m_renderer, 220, 20, 20);
         m_texHpBlack = Game::GenerateColorDDS(m_renderer, 15, 15, 15);
         m_texHpOrange = Game::GenerateColorDDS(m_renderer, 255, 140, 0);
         m_texMpBlue = Game::GenerateColorDDS(m_renderer, 50, 150, 255);
 
-        // [CORREÇÃO] Tuple consertado sem "auto []" para rodar liso no seu compilador!
         auto texData = Game::GenerateTextTexture(m_renderer, L"KayanK", RGB(255, 255, 255));
         m_player.nameTexId = std::get<0>(texData);
         m_player.nameW = std::get<1>(texData);
@@ -851,7 +970,7 @@ public:
         return m_monsterCache[key];
     }
 
-    void LoadEffect(const std::string& effectName, float mapX = -1.0f, float mapY = -1.0f, float screenOffsetX = 0.0f, float screenOffsetY = 0.0f, bool isDamage = false, int overrideDelay = -1) {
+    void LoadEffect(const std::string& effectName, float mapX = -1.0f, float mapY = -1.0f, float screenOffsetX = 0.0f, float screenOffsetY = 0.0f, bool isDamage = false, int overrideDelay = -1, float angle = 0.0f) {
         m_currentEffectName = effectName;
 
         auto it = m_effectConfigs.find(effectName);
@@ -876,6 +995,7 @@ public:
         newActiveEffect.mapY = mapY;
         newActiveEffect.screenOffsetX = screenOffsetX;
         newActiveEffect.screenOffsetY = screenOffsetY;
+        newActiveEffect.angle = angle;
 
         newActiveEffect.baseOffsetY = screenOffsetY;
         newActiveEffect.isDamageNumber = isDamage;
@@ -917,16 +1037,18 @@ public:
         Resource::TMEData tmeParsed = m_resource.ParseTME("ini\\tme\\" + tmeFile);
         if (!tmeParsed.isValid) return;
 
+        // [CORREÇÃO MATEMÁTICA] Linha reta baseada no MapAngle perfeitamente projetada!
+        float mapAngle = -angle + 0.785398f;
+
         for (const auto& node : tmeParsed.nodes) {
             if (node.effectName.empty()) continue;
 
             float distTiles = node.distance / 40.0f;
 
-            float rad = angle - 1.5708f;
-            float targetX = startX + std::cos(rad) * distTiles;
-            float targetY = startY + std::sin(rad) * distTiles;
+            float targetX = startX + std::cos(mapAngle) * distTiles;
+            float targetY = startY + std::sin(mapAngle) * distTiles;
 
-            LoadEffect(node.effectName, targetX, targetY, 0.0f, 0.0f, false, node.delay);
+            LoadEffect(node.effectName, targetX, targetY, 0.0f, 0.0f, false, node.delay, angle);
         }
     }
 
@@ -1534,131 +1656,6 @@ public:
             }
         }
 
-        if (ImGui::CollapsingHeader("Magias (MagicType.txt)", ImGuiTreeNodeFlags_DefaultOpen)) {
-            static int magic_idx = 0;
-
-            if (!m_magicDB.empty()) {
-                std::string currentMagicPreview = std::to_string(m_magicDB[magic_idx].id) + " - " + m_magicDB[magic_idx].name + " (Lv " + std::to_string(m_magicDB[magic_idx].level) + ")";
-
-                if (ImGui::BeginCombo("Selecione a Magia", currentMagicPreview.c_str())) {
-                    for (int n = 0; n < m_magicDB.size(); n++) {
-                        const bool is_selected = (magic_idx == n);
-
-                        std::string displayText = std::to_string(m_magicDB[n].id) + " - " + m_magicDB[n].name + " (Lv " + std::to_string(m_magicDB[n].level) + ")##" + std::to_string(n);
-
-                        if (ImGui::Selectable(displayText.c_str(), is_selected)) {
-                            magic_idx = n;
-                        }
-                        if (is_selected) ImGui::SetItemDefaultFocus();
-                    }
-                    ImGui::EndCombo();
-                }
-
-                if (ImGui::Button("Lancar Magia", ImVec2(-1.0f, 40.0f))) {
-                    auto& magic = m_magicDB[magic_idx];
-
-                    uint32_t finalAction = magic.actionId;
-                    if (finalAction == 401) {
-                        finalAction = 401 + (rand() % 3);
-                    }
-
-                    if (m_player.isMoving) {
-                        m_player.isMoving = false;
-                        m_player.targetMapX = m_player.mapX;
-                        m_player.targetMapY = m_player.mapY;
-                    }
-
-                    if (m_player.isJumping) {
-                        if (!magic.intoneEffect.empty()) LoadEffect(magic.intoneEffect, m_player.mapX, m_player.mapY);
-                        if (!magic.senderEffect.empty()) LoadEffect(magic.senderEffect, m_player.mapX, m_player.mapY);
-                        if (!magic.soundPath.empty()) m_audio.PlaySoundEffect(m_clientPath + "\\" + magic.soundPath);
-
-                        if (!magic.tmeFile.empty()) LoadTME(magic.tmeFile, m_player.mapX, m_player.mapY, m_player.facingAngle);
-
-                        if (!magic.targetEffect.empty() && magic.tmeFile.empty()) {
-                            float rad = m_player.facingAngle - 1.5708f;
-                            float fx = m_player.mapX + std::cos(rad) * 3.0f;
-                            float fy = m_player.mapY + std::sin(rad) * 3.0f;
-                            LoadEffect(magic.targetEffect, fx, fy);
-                        }
-
-                        m_player.hasQueuedAttack = true;
-                        m_player.queuedAttackAnim = (Game::RoleActionType)finalAction;
-                        m_player.queuedAttackIndex = finalAction;
-                    }
-                    else {
-                        if (!m_player.isAttacking) {
-                            m_player.isAttacking = true;
-                            m_player.currentFrame = 0;
-                            m_player.currentAttackIndex = finalAction;
-                            m_player.currentAttackAnim = (Game::RoleActionType)finalAction;
-
-                            PlayActionSound((uint32_t)m_player.modelType, GetWeaponPrefix(m_player.rightHandWeaponId, m_player.leftHandWeaponId), finalAction);
-                        }
-
-                        if (!magic.intoneEffect.empty()) LoadEffect(magic.intoneEffect, m_player.mapX, m_player.mapY);
-                        if (!magic.senderEffect.empty()) LoadEffect(magic.senderEffect, m_player.mapX, m_player.mapY);
-
-                        if (!magic.soundPath.empty()) {
-                            m_audio.PlaySoundEffect(m_clientPath + "\\" + magic.soundPath);
-                        }
-
-                        if (!magic.tmeFile.empty()) {
-                            LoadTME(magic.tmeFile, m_player.mapX, m_player.mapY, m_player.facingAngle);
-                        }
-
-                        if (!magic.targetEffect.empty() && magic.tmeFile.empty()) {
-                            float rad = m_player.facingAngle - 1.5708f;
-                            float fx = m_player.mapX + std::cos(rad) * 3.0f;
-                            float fy = m_player.mapY + std::sin(rad) * 3.0f;
-                            LoadEffect(magic.targetEffect, fx, fy);
-                        }
-                    }
-                }
-            }
-            else {
-                ImGui::Text("Banco de Dados MagicType.txt nao carregado.");
-            }
-        }
-
-        if (ImGui::CollapsingHeader("Testar Todos Efeitos Visuais")) {
-            static char searchBuffer[128] = "";
-            ImGui::InputText("Buscar", searchBuffer, IM_ARRAYSIZE(searchBuffer));
-
-            static int fx_idx = 0;
-            std::string previewName = "Nenhum";
-            if (!m_effectList.empty() && fx_idx >= 0 && fx_idx < m_effectList.size()) {
-                previewName = m_effectList[fx_idx];
-            }
-
-            if (ImGui::BeginCombo("Banco de Dados de Efeitos", previewName.c_str())) {
-                for (int n = 0; n < m_effectList.size(); n++) {
-                    std::string effectName = m_effectList[n];
-                    std::string searchStr = searchBuffer;
-
-                    std::string lowerEffect = effectName;
-                    std::string lowerSearch = searchStr;
-                    std::transform(lowerEffect.begin(), lowerEffect.end(), lowerEffect.begin(), ::tolower);
-                    std::transform(lowerSearch.begin(), lowerSearch.end(), lowerSearch.begin(), ::tolower);
-
-                    if (searchStr.empty() || lowerEffect.find(lowerSearch) != std::string::npos) {
-                        const bool is_selected = (fx_idx == n);
-                        if (ImGui::Selectable(effectName.c_str(), is_selected)) {
-                            fx_idx = n;
-                        }
-                        if (is_selected) ImGui::SetItemDefaultFocus();
-                    }
-                }
-                ImGui::EndCombo();
-            }
-
-            if (ImGui::Button("Disparar Efeito Bruto", ImVec2(-1.0f, 40.0f))) {
-                if (!m_effectList.empty() && fx_idx >= 0 && fx_idx < m_effectList.size()) {
-                    LoadEffect(m_effectList[fx_idx], m_player.mapX + 2.0f, m_player.mapY + 2.0f);
-                }
-            }
-        }
-
         if (ImGui::CollapsingHeader("Monstros (Spawn)")) {
             static int monster_idx = 0;
 
@@ -1801,6 +1798,57 @@ public:
             }
         }
 
+        int magicBtnX = startX + 750;
+        int magicBtnY = screenBottom - 48;
+
+        if (pt.x >= magicBtnX && pt.x <= magicBtnX + 64 && pt.y >= magicBtnY && pt.y <= magicBtnY + 64) {
+            mouseOnUI = true;
+            if (leftClicked) {
+                m_showSkillList = !m_showSkillList;
+                leftClicked = false;
+            }
+        }
+
+        if (m_showSkillList) {
+            int popupStartX = magicBtnX - 45;
+            int popupStartY = magicBtnY - 140;
+
+            int upX = popupStartX + 85; int upY = popupStartY + 10;
+            int downX = popupStartX + 85; int downY = popupStartY + 100;
+
+            if (pt.x >= upX && pt.x <= upX + 16 && pt.y >= upY && pt.y <= upY + 16) {
+                mouseOnUI = true;
+                if (leftClicked && m_skillCurrentPage > 0) { m_skillCurrentPage--; leftClicked = false; }
+            }
+            if (pt.x >= downX && pt.x <= downX + 16 && pt.y >= downY && pt.y <= downY + 16) {
+                mouseOnUI = true;
+                int maxPages = (m_uiSkills.size() + 5) / 6;
+                if (leftClicked && m_skillCurrentPage < maxPages - 1) { m_skillCurrentPage++; leftClicked = false; }
+            }
+
+            int startIndex = m_skillCurrentPage * 6;
+            for (int i = 0; i < 6; i++) {
+                int skillIndex = startIndex + i;
+                if (skillIndex >= m_uiSkills.size()) break;
+
+                int col = i % 2; int row = i / 2;
+                int sx = popupStartX + (col * 40);
+                int sy = popupStartY + (row * 40);
+
+                if (pt.x >= sx && pt.x <= sx + 32 && pt.y >= sy && pt.y <= sy + 32) {
+                    mouseOnUI = true;
+                    if (leftClicked) {
+                        m_selectedSkillId = m_uiSkills[skillIndex].id;
+                        m_selectedSkillLevel = m_uiSkills[skillIndex].level;
+                        m_showSkillList = false;
+                        leftClicked = false;
+                    }
+                }
+            }
+
+            if (pt.x >= popupStartX - 5 && pt.x <= popupStartX + 105 && pt.y >= popupStartY - 5 && pt.y <= popupStartY + 130) mouseOnUI = true;
+        }
+
         if (pt.x >= startX && pt.x <= startX + 1024 && pt.y >= screenBottom - 128 && pt.y <= screenBottom) {
             mouseOnUI = true;
         }
@@ -1903,6 +1951,82 @@ public:
                         m_player.queuedIsJump = (GetAsyncKeyState(VK_CONTROL) & 0x8000);
                     }
                 }
+                else if (rightClicked && m_selectedSkillId != 0) {
+                    m_player.targetMonsterIndex = -1;
+                    m_player.isChasing = false;
+                    m_player.isMoving = false;
+
+                    float castX = m_player.isJumping ? m_player.targetMapX : m_player.mapX;
+                    float castY = m_player.isJumping ? m_player.targetMapY : m_player.mapY;
+
+                    float dx = targetX - castX;
+                    float dy = targetY - castY;
+                    float newAngle = -(std::atan2(dy, dx) - 0.78539f);
+
+                    if (m_player.isJumping) {
+                        m_pendingFacingAngle = true;
+                        m_queuedFacingAngle = newAngle;
+                    }
+                    else {
+                        m_player.facingAngle = newAngle;
+                    }
+
+                    float mapAngle = -newAngle + 0.785398f;
+
+                    MagicDef* magic = nullptr;
+                    for (auto& m : m_magicDB) {
+                        if (m.id == m_selectedSkillId && m.level == m_selectedSkillLevel) {
+                            magic = &m; break;
+                        }
+                    }
+
+                    if (magic) {
+                        m_activeCastSkillId = magic->id;
+                        m_activeCastSort = magic->sort;
+                        m_activeCastStartX = castX;
+                        m_activeCastStartY = castY;
+                        m_activeCastTargetX = castX + std::cos(mapAngle) * 14.0f;
+                        m_activeCastTargetY = castY + std::sin(mapAngle) * 14.0f;
+
+                        uint32_t finalAction = magic->actionId;
+                        if (finalAction == 401) {
+                            finalAction = 401 + m_attackSequence;
+                            m_attackSequence++;
+                            if (m_attackSequence > 2) m_attackSequence = 0;
+                        }
+
+                        if (m_player.isJumping) {
+                            m_player.hasQueuedAttack = true;
+                            m_player.queuedAttackIndex = finalAction;
+                            m_player.queuedAttackAnim = (Game::RoleActionType)finalAction;
+                        }
+                        else {
+                            m_player.isMoving = false;
+                            m_player.isAttacking = true;
+                            m_player.currentFrame = 0;
+                            m_player.currentAttackIndex = finalAction;
+                            m_player.currentAttackAnim = (Game::RoleActionType)finalAction;
+                            PlayActionSound((uint32_t)m_player.modelType, GetWeaponPrefix(m_player.rightHandWeaponId, m_player.leftHandWeaponId), finalAction);
+                            m_player.isAlert = true;
+                            m_player.alertTimer = 5.0f;
+                        }
+
+                        if (!magic->intoneEffect.empty()) LoadEffect(magic->intoneEffect, castX, castY, 0, 0, false, -1, newAngle);
+                        if (!magic->senderEffect.empty()) LoadEffect(magic->senderEffect, castX, castY, 0, 0, false, -1, newAngle);
+                        if (!magic->soundPath.empty()) m_audio.PlaySoundEffect(m_clientPath + "\\" + magic->soundPath);
+
+                        if (!magic->tmeFile.empty()) LoadTME(magic->tmeFile, castX, castY, newAngle);
+
+                        if (!magic->targetEffect.empty() && magic->tmeFile.empty()) {
+                            if (magic->sort == 14) {
+                                LoadEffect(magic->targetEffect, castX, castY, 0.0f, 0.0f, false, -1, newAngle);
+                            }
+                            else {
+                                LoadEffect(magic->targetEffect, targetX, targetY, 0.0f, 0.0f, false, -1, 0.0f);
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1919,6 +2043,11 @@ public:
             if (progress >= 1.0f) {
                 m_player.mapX = m_player.targetMapX; m_player.mapY = m_player.targetMapY;
                 m_player.jumpZ = 0.0f; m_player.isJumping = false; m_player.currentFrame = 0;
+
+                if (m_pendingFacingAngle) {
+                    m_player.facingAngle = m_queuedFacingAngle;
+                    m_pendingFacingAngle = false;
+                }
 
                 if (m_player.hasQueuedAttack) {
                     m_player.hasQueuedAttack = false;
@@ -1997,9 +2126,13 @@ public:
                 }
                 else {
                     if (!m_player.isAttacking) {
+                        m_activeCastSkillId = 0;
                         m_player.isAttacking = true;
                         m_player.currentFrame = 0;
-                        m_player.currentAttackIndex = 401 + (rand() % 3);
+                        m_player.currentAttackIndex = 401 + m_attackSequence;
+                        m_attackSequence++;
+                        if (m_attackSequence > 2) m_attackSequence = 0;
+
                         m_player.currentAttackAnim = (Game::RoleActionType)m_player.currentAttackIndex;
 
                         PlayActionSound((uint32_t)m_player.modelType, GetWeaponPrefix(m_player.rightHandWeaponId, m_player.leftHandWeaponId), m_player.currentAttackIndex);
@@ -2048,7 +2181,36 @@ public:
 
             if (m_player.isAttacking) {
                 if (m_player.currentFrame == 10) {
-                    if (m_player.targetMonsterIndex != -1 && m_player.targetMonsterIndex < m_monsters.size()) {
+                    if (m_activeCastSkillId != 0 && m_activeCastSort == 14) {
+                        for (size_t i = 0; i < m_monsters.size(); i++) {
+                            auto& mob = m_monsters[i];
+                            if (mob.isDead) continue;
+
+                            float dist = PointToSegmentDistance(mob.mapX, mob.mapY, m_activeCastStartX, m_activeCastStartY, m_activeCastTargetX, m_activeCastTargetY);
+
+                            if (dist <= 1.5f) {
+                                int damage = 800 + (rand() % 400);
+                                mob.hp -= damage;
+
+                                std::string dmgStr = std::to_string(damage);
+                                float digitSpacing = 30.0f;
+                                float startX = -((dmgStr.length() - 1) * digitSpacing) / 2.0f;
+
+                                for (size_t k = 0; k < dmgStr.length(); ++k) {
+                                    std::string effectName = "CountB" + std::string(1, dmgStr[k]);
+                                    LoadEffect(effectName, mob.mapX, mob.mapY, startX + (k * digitSpacing), 130.0f, true);
+                                }
+
+                                if (mob.hp <= 0 && !mob.isDead) {
+                                    mob.hp = 0; mob.isDead = true; mob.currentAction = 330; mob.currentFrame = 0;
+                                    mob.animTimer = 0.0f; mob.deathTimer = 0.0f; mob.alpha = 1.0f;
+                                    PlayActionSound(mob.meshId, 999, 330);
+                                    if (m_player.targetMonsterIndex == i) { m_player.targetMonsterIndex = -1; m_player.isChasing = false; }
+                                }
+                            }
+                        }
+                    }
+                    else if (m_player.targetMonsterIndex != -1 && m_player.targetMonsterIndex < m_monsters.size()) {
                         auto& mob = m_monsters[m_player.targetMonsterIndex];
                         int damage = 405;
                         mob.hp -= damage;
@@ -2083,6 +2245,7 @@ public:
                     m_player.currentFrame = 0;
                     m_player.isAttacking = false;
                     m_player.attackCooldown = 0.6f;
+                    m_activeCastSkillId = 0;
 
                     m_player.isAlert = true;
                     m_player.alertTimer = 5.0f;
@@ -2607,6 +2770,8 @@ public:
         }
 
         for (auto& effect : m_activeEffects) {
+            if (effect.isWaitingDelay || effect.isWaitingInterval || effect.isFinished) continue;
+
             float drawCx = cx;
             float drawCy = cy - (m_player.jumpZ * m_zoom);
 
@@ -2670,14 +2835,6 @@ public:
                 int adb = effect.config.parts[i].adb;
                 int eColor = effect.config.colorEnable;
 
-                int passColorEnable = eColor;
-                std::string effLower = effect.name;
-                std::transform(effLower.begin(), effLower.end(), effLower.begin(), ::tolower);
-
-                if (i == 0 && (effLower.find("zf2") != std::string::npos || effLower.find("thunder") != std::string::npos)) {
-                    passColorEnable += 100;
-                }
-
                 if (part.model.isValid) {
                     if (!part.model.phys.empty()) {
                         bool drawMesh = true;
@@ -2687,7 +2844,7 @@ public:
                             }
                         }
                         if (drawMesh) {
-                            m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, 0.0f, ePitch, false, eScale, nullptr, -1, 0, asb, adb, eAlpha, true, passColorEnable);
+                            m_renderer.DrawMesh3D(part.model, drawCx, drawCy, part.textureId, effect.currentFrame, effect.angle, ePitch, false, eScale, nullptr, -1, 0, asb, adb, eAlpha, true, eColor);
                         }
                     }
                     if (!part.model.ptcls.empty()) {
@@ -2699,7 +2856,7 @@ public:
                             int ptclFrame = effect.currentFrame;
                             if (effect.config.loopTime == 0) ptclFrame %= part.model.ptcls[0].frames.size();
                             for (auto& ptcl : part.model.ptcls) ptcl.globalAlpha = eAlpha;
-                            m_renderer.DrawParticles(part.model, drawCx, drawCy, part.textureId, ptclFrame, 0.0f, ePitch, eScale, asb, adb, nullptr, -1, 0, eColor);
+                            m_renderer.DrawParticles(part.model, drawCx, drawCy, part.textureId, ptclFrame, effect.angle, ePitch, eScale, asb, adb, nullptr, -1, 0, eColor);
                         }
                     }
                 }
@@ -2711,6 +2868,17 @@ public:
         int totalW = 1024;
         int startX = (m_window.m_width - totalW) / 2;
         int screenBottom = m_window.m_height;
+
+        if (m_texProgressHP != -1 && m_texProgressMP != -1) {
+            SetSpriteUV(0.0f, 0.0f, 1.0f, 1.0f);
+            int globeSize = 134;
+            int globeLifeX = startX + 2;
+            int globeManaX = startX + 50;
+            int globeY = screenBottom - 84;
+
+            m_renderer.DrawSprite(m_texProgressHP, globeLifeX, globeY, globeSize, globeSize);
+            m_renderer.DrawSprite(m_texProgressMP, globeManaX, globeY, globeSize, globeSize);
+        }
 
         if (m_texMainDialog1 != -1 && m_texMainDialog2 != -1) {
             SetSpriteUV(0.0f, 0.5f, 1.0f, 1.0f);
@@ -2728,9 +2896,7 @@ public:
 
         if (m_texDialogTalk1 != -1 && m_texDialogTalk2 != -1 && m_texDialogTalk3 != -1 && m_texDialogTalk4 != -1) {
             SetSpriteUV(0.0f, 0.0f, 1.0f, 1.0f);
-
             int talkY = screenBottom - 74;
-
             int distanciaXChat = 82;
 
             m_renderer.DrawSprite(m_texDialogTalk1, startX + distanciaXChat, talkY, 256, 32);
@@ -2796,6 +2962,53 @@ public:
                 m_renderer.DrawSprite(m_heroTgaId, hx, hy, 16, 16);
                 SetSpriteUV(0.0f, 0.0f, 1.0f, 1.0f);
             }
+        }
+
+        SetSpriteUV(0.0f, 0.0f, 1.0f, 1.0f);
+        int magicBtnX = startX + 750;
+        int magicBtnY = screenBottom - 48;
+
+        if (m_selectedSkillId != 0 && m_skillIconTexIds.count(m_selectedSkillId)) {
+            m_renderer.DrawSprite(m_skillIconTexIds[m_selectedSkillId], magicBtnX, magicBtnY, 64, 64);
+        }
+        else if (m_texMainImgMagic != -1) {
+            m_renderer.DrawSprite(m_texMainImgMagic, magicBtnX, magicBtnY, 64, 64);
+        }
+
+        if (m_showSkillList) {
+            int popupStartX = magicBtnX - 45;
+            int popupStartY = magicBtnY - 140;
+
+            if (m_texHpBlack != -1) m_renderer.DrawSprite(m_texHpBlack, popupStartX - 5, popupStartY - 5, 110, 135);
+
+            int startIndex = m_skillCurrentPage * 6;
+            for (int i = 0; i < 6; i++) {
+                int skillIndex = startIndex + i;
+                if (skillIndex >= m_uiSkills.size()) break;
+
+                int col = i % 2;
+                int row = i / 2;
+                int sx = popupStartX + (col * 40);
+                int sy = popupStartY + (row * 40);
+
+                uint32_t sId = m_uiSkills[skillIndex].id;
+                if (m_skillIconTexIds.count(sId)) {
+                    m_renderer.DrawSprite(m_skillIconTexIds[sId], sx, sy, 32, 32);
+                }
+
+                if (m_mouseX >= sx && m_mouseX <= sx + 32 && m_mouseY >= sy && m_mouseY <= sy + 32) {
+                    int tId = m_uiSkills[skillIndex].tooltipTexId;
+                    if (tId != -1) {
+                        if (m_texHpBlack != -1) m_renderer.DrawSprite(m_texHpBlack, m_mouseX + 15, m_mouseY, m_uiSkills[skillIndex].tooltipW + 10, m_uiSkills[skillIndex].tooltipH + 10);
+                        m_renderer.DrawSprite(tId, m_mouseX + 20, m_mouseY + 5, m_uiSkills[skillIndex].tooltipW, m_uiSkills[skillIndex].tooltipH);
+                    }
+                }
+            }
+
+            int upX = popupStartX + 85; int upY = popupStartY + 10;
+            int downX = popupStartX + 85; int downY = popupStartY + 100;
+            if (m_texQuerySkillBtnU != -1) m_renderer.DrawSprite(m_texQuerySkillBtnU, upX, upY, 16, 16);
+            if (m_texQuerySkillBtnD != -1) m_renderer.DrawSprite(m_texQuerySkillBtnD, downX, downY, 16, 16);
         }
 
         if (m_currentDMap.isValid && m_currentPul.isValid) {
