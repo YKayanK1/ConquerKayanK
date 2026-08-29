@@ -53,7 +53,7 @@ namespace Game {
         float jumpTimer = 0.0f, jumpZ = 0.0f;
         int currentFrame = 0;
         float animTimer = 0.0f;
-        float facingAngle = -0.78539f;
+        float facingAngle = -0.78539f; // rotação do boneco
 
         int nameTexId = -1, nameW = 0, nameH = 0;
 
@@ -114,4 +114,31 @@ namespace Game {
         int width, height;
         int offsetX, offsetY;
     };
+
+    // NPC estatico do mapa (loja/quest giver/decorativo). Renderizado parado com
+    // a animacao StandBy resolvida a partir de lookface -> npc.ini/NpcX.ini.
+    struct NpcVisualPart {
+        int meshIndex = -1; // indice em NpcRuntime::models
+        int textureId = -1;
+    };
+
+    struct NpcEntity {
+        uint32_t dbId = 0;
+        std::string name;
+        int type = 0; // 1 = invoca dialogo, 2 = fala
+        float mapX = 0.0f, mapY = 0.0f;
+        float facingAngle = -0.78539f;
+
+        int nameTexId = -1, nameW = 0, nameH = 0;
+
+        // Modo "objeto simples" (lookfaceBase < 1000): 1+ partes de mesh/textura fixos.
+        bool isSimpleObj = true;
+        int cacheIndex = -1; // indice no cache de render compartilhado (NpcRenderCache)
+
+        // [Animacao StandBy] Avanca o frame da motion (StandByMotion) enquanto o NPC esta parado,
+        // igual e feito para monstros/player, para nao ficar travado no frame 0.
+        float animTimer = 0.0f;
+        int currentFrame = 0;
+    };
 }
+

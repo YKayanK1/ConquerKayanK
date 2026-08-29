@@ -1,1 +1,35 @@
 .vs/
+
+# Visual Studio / build outputs
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]in/
+[Oo]bj/
+*.ilk
+*.pdb
+*.obj
+*.exe
+*.lib
+*.exp
+*.iobj
+*.ipdb
+*.tlog
+*.log
+*.idb
+
+# Visual Studio user/local files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb
+
+# ----------------------------------------------------------------------------
+# Projetos de referencia (NAO fazem parte do build, usados apenas para
+# comparacao/estudo ao portar features de outros repositorios open-source).
+# Sempre listar aqui cada novo projeto de referencia adicionado ao workspace.
+# ----------------------------------------------------------------------------
+_ref_MapViewer/

@@ -7,6 +7,7 @@
 #include "Resource_Effect.h" 
 #include "Resource_MusicRegion.h"
 #include "Resource_Region.h"
+#include "Resource_Npc.h"
 
 #include <fstream>
 #include <iostream>
@@ -27,6 +28,8 @@ namespace Resource {
     struct Manager::Impl {
         std::string clientPath;
         std::vector<std::shared_ptr<WdfPackage>> m_packages;
+        std::unordered_map<std::string, std::vector<uint8_t>> m_fileCache;
+        std::unordered_map<std::string, std::string> m_aniSectionCache;
 
         bool Initialize(const std::string& path) {
             clientPath = path;
@@ -86,8 +89,15 @@ namespace Resource {
         }
 
         std::vector<uint8_t> GetFileData(const std::string& internalPath) {
+            auto cached = m_fileCache.find(internalPath);
+            if (cached != m_fileCache.end()) return cached->second;
+
             auto loose = ReadLooseFile(internalPath);
-            if (!loose.empty()) return loose;
+            if (!loose.empty()) {
+                auto& slot = m_fileCache[internalPath];
+                slot = std::move(loose);
+                return slot;
+            }
 
             uint32_t hash = HashFilename(internalPath);
             for (auto& pkg : m_packages) {
@@ -97,9 +107,14 @@ namespace Resource {
                     pkg->stream.seekg(pf.offset, std::ios::beg);
                     std::vector<uint8_t> data(pf.size);
                     pkg->stream.read((char*)data.data(), pf.size);
-                    return data;
+                    auto& slot = m_fileCache[internalPath];
+                    slot = std::move(data);
+                    return slot;
                 }
             }
+            // Cache misses too, so we don't retry the (relatively expensive) loose-file
+            // stat/open and package lookup for a path that repeatedly doesn't resolve.
+            m_fileCache[internalPath] = {};
             return {};
         }
 
@@ -120,7 +135,13 @@ namespace Resource {
         }
 
         std::string ParseAniSection(const std::string& aniPath, const std::string& sectionName) {
-            return ParseAniSectionData(GetFileData(aniPath), sectionName);
+            std::string key = aniPath + "|" + sectionName;
+            auto cached = m_aniSectionCache.find(key);
+            if (cached != m_aniSectionCache.end()) return cached->second;
+
+            std::string result = ParseAniSectionData(GetFileData(aniPath), sectionName);
+            m_aniSectionCache[key] = result;
+            return result;
         }
 
         std::unordered_map<std::string, EffectConfig> Parse3DEffects(const std::string& path) {
@@ -159,6 +180,22 @@ namespace Resource {
         std::vector<MapRegionEntry> ParseRegions(const std::string& path) {
             return ParseRegionData(GetFileData(path));
         }
+
+        std::vector<NpcDbEntry> ParseNpcCsv(const std::string& path) {
+            return ParseNpcCsvData(GetFileData(path));
+        }
+
+        std::unordered_map<uint32_t, NpcTypeConfig> ParseNpcTypeIni(const std::string& path) {
+            return ParseNpcTypeIniData(GetFileData(path));
+        }
+
+        std::unordered_map<uint32_t, SimpleObjConfig> ParseSimpleObjIni(const std::string& path) {
+            return ParseSimpleObjIniData(GetFileData(path));
+        }
+
+        std::unordered_map<uint32_t, NpcXConfig> ParseNpcXIni(const std::string& path) {
+            return ParseNpcXIniData(GetFileData(path));
+        }
     };
 
     Manager::Manager() : pImpl(new Impl()) {}
@@ -174,6 +211,11 @@ namespace Resource {
     std::string Manager::ParseAniSection(const std::string& ani, const std::string& sec) { return pImpl->ParseAniSection(ani, sec); }
     std::vector<MusicRegionEntry> Manager::ParseMusicRegions(const std::string& p) { return pImpl->ParseMusicRegions(p); }
     std::vector<MapRegionEntry> Manager::ParseRegions(const std::string& p) { return pImpl->ParseRegions(p); }
+
+    std::vector<NpcDbEntry> Manager::ParseNpcCsv(const std::string& p) { return pImpl->ParseNpcCsv(p); }
+    std::unordered_map<uint32_t, NpcTypeConfig> Manager::ParseNpcTypeIni(const std::string& p) { return pImpl->ParseNpcTypeIni(p); }
+    std::unordered_map<uint32_t, SimpleObjConfig> Manager::ParseSimpleObjIni(const std::string& p) { return pImpl->ParseSimpleObjIni(p); }
+    std::unordered_map<uint32_t, NpcXConfig> Manager::ParseNpcXIni(const std::string& p) { return pImpl->ParseNpcXIni(p); }
 
     std::unordered_map<std::string, EffectConfig> Manager::Parse3DEffects(const std::string& path) { return pImpl->Parse3DEffects(path); }
     std::unordered_map<uint32_t, std::string> Manager::ParseResIni(const std::string& path) { return pImpl->ParseResIni(path); }

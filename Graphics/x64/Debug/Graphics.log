@@ -224,6 +224,36 @@ D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(245,21): wa
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(256,21): warning C4251: 'Resource::NpcDbEntry::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcDbEntry'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(265,21): warning C4251: 'Resource::NpcTypeConfig::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcTypeConfig'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(268,21): warning C4251: 'Resource::NpcTypeConfig::effect': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcTypeConfig'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(281,36): warning C4251: 'Resource::SimpleObjConfig::parts': 'std::vector<Resource::SimpleObjPart,std::allocator<Resource::SimpleObjPart>>' needs to have dll-interface to be used by clients of 'Resource::SimpleObjConfig'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::SimpleObjPart,std::allocator<Resource::SimpleObjPart>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(286,21): warning C4251: 'Resource::NpcXConfig::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcXConfig'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(295,21): warning C4251: 'Resource::NpcXConfig::effect': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcXConfig'
+  (compiling source file '/Graphics.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
 D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Graphics\Graphics.h(29,37): warning C4251: 'Graphics::ShapeRenderState::vb': 'std::vector<Graphics::ShapeOutVertex,std::allocator<Graphics::ShapeOutVertex>>' needs to have dll-interface to be used by clients of 'Graphics::ShapeRenderState'
   (compiling source file '/Graphics.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):

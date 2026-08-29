@@ -42,6 +42,9 @@
     <ClInclude Include="Resource_Region.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Resource_Npc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Resource.cpp">

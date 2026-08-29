@@ -250,6 +250,51 @@ namespace Resource {
         }
     };
 
+    // ini\cq_npc.csv: banco de dados de NPCs do servidor (posicao/type/lookface).
+    struct RESOURCE_API NpcDbEntry {
+        uint32_t id = 0;
+        std::string name;
+        int type = 0;
+        uint32_t lookface = 0;
+        uint32_t mapId = 0;
+        int cellX = 0, cellY = 0;
+    };
+
+    // ini\npc.ini [NpcTypeNNN]: usado quando lookfaceBase < 1000.
+    struct RESOURCE_API NpcTypeConfig {
+        std::string name;
+        uint32_t simpleObjId = 0;
+        uint32_t standByMotion = 0, blazeMotion = 0, restMotion = 0;
+        std::string effect;
+        int asb = 5, adb = 6;
+        int fixDir = 0;
+    };
+
+    struct RESOURCE_API SimpleObjPart {
+        uint32_t mesh = 0;
+        uint32_t texture = 0;
+    };
+
+    // ini\3DSimpleObj.ini [ObjIDTypeNNNN]: partes de mesh/textura (sem animacao propria).
+    struct RESOURCE_API SimpleObjConfig {
+        int partAmount = 0;
+        std::vector<SimpleObjPart> parts;
+    };
+
+    // ini\NpcX.ini [NNNN]: NPC montado como "boneco" completo (lookfaceBase >= 1000).
+    struct RESOURCE_API NpcXConfig {
+        std::string name;
+        int addSize = 0;
+        int scale = 100;
+        int fixDir = 0;
+        uint32_t look = 0;
+        uint32_t head = 0, hair = 0;
+        uint32_t armet = 0, armor = 0;
+        uint32_t rWeapon = 0, lWeapon = 0;
+        uint32_t misc = 0, mount = 0;
+        std::string effect;
+    };
+
     class RESOURCE_API Manager {
     public:
         Manager();
@@ -279,6 +324,11 @@ namespace Resource {
 
         std::vector<MusicRegionEntry> ParseMusicRegions(const std::string& filePath);
         std::vector<MapRegionEntry> ParseRegions(const std::string& filePath);
+
+        std::vector<NpcDbEntry> ParseNpcCsv(const std::string& filePath);
+        std::unordered_map<uint32_t, NpcTypeConfig> ParseNpcTypeIni(const std::string& filePath);
+        std::unordered_map<uint32_t, SimpleObjConfig> ParseSimpleObjIni(const std::string& filePath);
+        std::unordered_map<uint32_t, NpcXConfig> ParseNpcXIni(const std::string& filePath);
 
     private:
         struct Impl;

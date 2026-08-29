@@ -244,7 +244,6 @@ public:
     int m_regionNameTexId = -1;
     int m_regionNameW = 0, m_regionNameH = 0;
     int m_activeRegionEffectIdx = -1; // regiao (com effectName) cujo efeito esta ativo
-    float m_regionEffectRetriggerTimer = 0.0f; // reagenda o efeito periodicamente (LoopTime=1 finaliza rapido)
 
     struct ExpandedMonsterEntity : public Game::MonsterEntity {
         uint32_t meshId;
@@ -298,6 +297,7 @@ public:
         float baseOffsetY = 0.0f;
 
         bool isFirstFrame = true;
+        bool isScreenFixed = false; // ignora jumpZ e fica travado no centro da tela (ex: efeito de regiao/cidade)
     };
     std::vector<ActiveEffect> m_activeEffects;
 
@@ -386,13 +386,37 @@ public:
     };
     std::unordered_map<uint64_t, CachedMonster> m_monsterCache;
 
+    // [NPCs] ini\cq_npc.csv define quais NPCs existem em cada mapa (posicao/type/lookface).
+    // A aparencia e resolvida via lookfaceBase (lookface sem o ultimo digito de direcao):
+    // < 1000  -> ini\npc.ini [NpcTypeNNN] -> SimpleObjID -> ini\3DSimpleObj.ini [ObjIDTypeYYYY]
+    //            (partes de mesh/textura fixas, sem "roupa"), com StandByMotion via 3dmotion.ini.
+    // >= 1000 -> ini\NpcX.ini [NNNN] monta um "boneco" completo (Look/Armor/Armet/RWeapon/LWeapon)
+    //            ou, se Look nao for um tipo de boneco (1-4), reusa o pipeline de monstro.
+    struct CachedNpcRender {
+        bool isSimpleObj = true;
+        std::vector<Resource::C3Model> partModels;
+        std::vector<int> partTextureIds;
+        int asb = 5, adb = 6;
+        bool isMonsterStyle = false; // usa GetMonsterRender (Look nao e boneco)
+        uint32_t monsterMeshId = 0;
+    };
+    std::unordered_map<uint32_t, CachedNpcRender> m_npcRenderCache; // chave = lookfaceBase
+
+    std::vector<Resource::NpcDbEntry> m_npcDbAll;
+    std::unordered_map<uint32_t, Resource::NpcTypeConfig> m_npcTypeConfigs;
+    std::unordered_map<uint32_t, Resource::SimpleObjConfig> m_simpleObjConfigs;
+    std::unordered_map<uint32_t, Resource::NpcXConfig> m_npcXConfigs;
+    std::vector<Game::NpcEntity> m_npcs;
+
     std::unordered_map<int16_t, int> m_puzzleTextures;
+    std::unordered_map<std::string, int> m_terrainTextureCache;
     Resource::DMapData m_currentDMap;
     Resource::PulData m_currentPul;
     int m_tileSize = 256;
     float m_cameraX = 0.0f, m_cameraY = 0.0f;
     float m_zoom = 1.0f;
     int m_mouseX = 0, m_mouseY = 0;
+
 
     // [Colisao/Agua] Acesso as celulas do mapa carregado.
     // access == 1 (Inaccessible) bloqueia movimento; surface == 1 identifica agua (nao bloqueante, apenas altera animacao).
@@ -405,13 +429,55 @@ public:
     bool IsCellBlocked(float mapX, float mapY) const {
         const Resource::MapCell* cell = GetMapCellAt((int)std::floor(mapX), (int)std::floor(mapY));
         if (!cell) return true; // fora do mapa carregado = bloqueado
-        return cell->access == 1;
+        if (cell->access == 1) return true;
+        if (IsNpcOccupying(mapX, mapY)) return true; // [NPC] celula ocupada por NPC = intransitavel
+        return false;
+    }
+
+    // [NPC bloqueia movimento] O NPC ocupa a celula onde esta parado, como um objeto do mapa.
+    // Usado por IsCellBlocked (que por sua vez e usado tanto para andar quanto para pular),
+    // portanto o jogador nao consegue nem pular nem caminhar por cima do NPC; o
+    // FindWalkableTarget tambem para automaticamente antes de chegar nele (corre ate onde pode).
+    bool IsNpcOccupying(float mapX, float mapY) const {
+        int cx = (int)std::floor(mapX);
+        int cy = (int)std::floor(mapY);
+        for (const auto& npc : m_npcs) {
+            if ((int)std::floor(npc.mapX) == cx && (int)std::floor(npc.mapY) == cy) return true;
+        }
+        return false;
     }
 
     bool IsCellWater(float mapX, float mapY) const {
         const Resource::MapCell* cell = GetMapCellAt((int)std::floor(mapX), (int)std::floor(mapY));
         if (!cell) return false;
         return cell->surface == 1;
+    }
+
+    // [Andar ate onde for possivel] Ao clicar num destino bloqueado (agua, obstaculo, etc.),
+    // caminha em linha reta na direcao do clique e retorna o ultimo ponto valido antes do
+    // bloqueio, permitindo o "melhor trajeto" ate a borda em vez de simplesmente ignorar o clique.
+    // Usado apenas para andar (nao para pular, que exige o destino exato ser valido).
+    void FindWalkableTarget(float fromX, float fromY, float toX, float toY, float& outX, float& outY) const {
+        outX = fromX; outY = fromY;
+
+        float dx = toX - fromX;
+        float dy = toY - fromY;
+        float dist = std::sqrt(dx * dx + dy * dy);
+        if (dist < 0.001f) return;
+
+        int steps = (std::max)(1, (int)std::ceil(dist / 0.1f));
+        float stepX = dx / steps;
+        float stepY = dy / steps;
+
+        float lastValidX = fromX, lastValidY = fromY;
+        for (int i = 1; i <= steps; i++) {
+            float px = fromX + stepX * i;
+            float py = fromY + stepY * i;
+            if (IsCellBlocked(px, py)) break;
+            lastValidX = px; lastValidY = py;
+        }
+
+        outX = lastValidX; outY = lastValidY;
     }
 
     // [Sons ambiente do mapa] ini\MusicRegion.ini define regioes retangulares (em tiles)
@@ -869,6 +935,11 @@ public:
         m_action3DEffects = m_resource.ParseAction3DEffects("ini\\Action3DEffect.ini");
         m_actionSounds = m_resource.ParseActionSound("ini\\ActionSound.ini");
 
+        m_npcTypeConfigs = m_resource.ParseNpcTypeIni("ini\\npc.ini");
+        m_simpleObjConfigs = m_resource.ParseSimpleObjIni("ini\\3DSimpleObj.ini");
+        m_npcXConfigs = m_resource.ParseNpcXIni("ini\\NpcX.ini");
+        m_npcDbAll = m_resource.ParseNpcCsv("ini\\cq_npc.csv");
+
         LoadItemTypes("ini\\itemtype.txt");
         LoadMonsterDB();
         LoadMagicDB();
@@ -957,6 +1028,45 @@ public:
         m_activeRegionNameIdx = -1;
         m_activeRegionEffectIdx = -1;
 
+        // [NPCs] Filtra cq_npc.csv pelo mapa atual e resolve nome/posicao (aparencia
+        // e resolvida sob demanda em UpdateMap/render via GetNpcRender + cache).
+        for (auto& npc : m_npcs) {
+            if (npc.nameTexId != -1) m_renderer.DeleteTexture(npc.nameTexId);
+        }
+        m_npcs.clear();
+        for (auto& dbEntry : m_npcDbAll) {
+            if (dbEntry.mapId != (uint32_t)currentMapId) continue;
+
+            Game::NpcEntity npc;
+            npc.dbId = dbEntry.id;
+            npc.name = dbEntry.name;
+            npc.type = dbEntry.type;
+            npc.mapX = (float)dbEntry.cellX + 0.5f;
+            npc.mapY = (float)dbEntry.cellY + 0.5f;
+
+            uint32_t lookfaceBase = dbEntry.lookface / 10;
+            uint32_t direction = dbEntry.lookface % 10;
+
+            // [ROTACAO DO NPC - AJUSTE AQUI] Cada uma das 8 direcoes do lookface gira 45 graus
+            // (0.78539816f rad = PI/4). O NPC_FACING_OFFSET abaixo e um deslocamento extra
+            // somado ao angulo final; mude apenas este valor (em radianos) para girar o boneco
+            // suavemente para cima/baixo/lado e ir testando ate achar o ideal.
+            // Referencia rapida: 0.0f = sem deslocamento extra; valores positivos giram num
+            // sentido, negativos no outro. 0.78539816f equivale a 45 graus, 0.39269908f a 22.5 graus, etc.
+            constexpr float NPC_FACING_OFFSET = 0.78539816f; // <-- MUDE ESTE VALOR PARA TESTAR
+            npc.facingAngle = -((float)direction * 0.78539816f) - NPC_FACING_OFFSET;
+            npc.isSimpleObj = lookfaceBase < 1000;
+            npc.cacheIndex = (int)lookfaceBase;
+
+            std::wstring wideName(npc.name.begin(), npc.name.end());
+            auto texData = Game::GenerateTextTexture(m_renderer, wideName, RGB(255, 255, 0));
+            npc.nameTexId = std::get<0>(texData);
+            npc.nameW = std::get<1>(texData);
+            npc.nameH = std::get<2>(texData);
+
+            m_npcs.push_back(npc);
+        }
+
         if (gameMaps.count(currentMapId)) {
             m_currentDMap = m_resource.LoadDMap(gameMaps[currentMapId].dmapPath);
             if (m_currentDMap.isValid) {
@@ -981,30 +1091,60 @@ public:
                     }
                 }
 
+                // [Perf] terrainObjects frequentemente repetem o mesmo par aniPath/aniName (ex: mesma
+                // arvore/decoracao usada dezenas de vezes num mapa grande como o 1002). Cacheamos a
+                // textura e as dimensoes em pixel por essa chave para evitar reler/redecodificar e
+                // recriar a mesma textura na GPU a cada ocorrencia.
+                std::unordered_map<std::string, std::pair<int, int>> terrainSizeCache;
                 for (const auto& terrain : m_currentDMap.terrainObjects) {
-                    std::string ddsPath = m_resource.ParseAniSection(terrain.aniPath, terrain.aniName);
-                    if (!ddsPath.empty()) {
-                        auto terrainTexData = m_resource.GetFileData(ddsPath);
-                        if (!terrainTexData.empty()) {
-                            Game::SceneObject obj;
-                            obj.textureId = m_renderer.LoadTextureFromMemory(terrainTexData.data(), terrainTexData.size());
+                    std::string key = terrain.aniPath + "|" + terrain.aniName;
+                    auto cachedTex = m_terrainTextureCache.find(key);
 
-                            // [Fix] terrain.width/height do .dmap representam a area em TILES (footprint no chao),
-                            // nao o tamanho em pixels da textura. Usar esses valores direto no DrawSprite fazia
-                            // arvores/objetos renderizarem como sprites minusculos (poucos pixels) e praticamente invisiveis.
-                            int pixelW = 0, pixelH = 0;
-                            if (Resource::ReadImagePixelSize(terrainTexData, pixelW, pixelH)) {
-                                obj.width = pixelW; obj.height = pixelH;
+                    int textureId = -1;
+                    int pixelW = 0, pixelH = 0;
+                    if (cachedTex != m_terrainTextureCache.end()) {
+                        textureId = cachedTex->second;
+                        auto sizeIt = terrainSizeCache.find(key);
+                        if (sizeIt != terrainSizeCache.end()) { pixelW = sizeIt->second.first; pixelH = sizeIt->second.second; }
+                    }
+                    else {
+                        std::string ddsPath = m_resource.ParseAniSection(terrain.aniPath, terrain.aniName);
+                        if (!ddsPath.empty()) {
+                            auto terrainTexData = m_resource.GetFileData(ddsPath);
+                            if (!terrainTexData.empty()) {
+                                textureId = m_renderer.LoadTextureFromMemory(terrainTexData.data(), terrainTexData.size());
+                                Resource::ReadImagePixelSize(terrainTexData, pixelW, pixelH);
+                                m_terrainTextureCache[key] = textureId;
+                                terrainSizeCache[key] = { pixelW, pixelH };
                             }
-                            else {
-                                obj.width = terrain.width; obj.height = terrain.height;
-                            }
-
-                            obj.mapX = (float)terrain.mapX; obj.mapY = (float)terrain.mapY;
-                            obj.offsetX = terrain.offsetX; obj.offsetY = terrain.offsetY;
-                            m_sceneObjects.push_back(obj);
                         }
                     }
+
+                    if (textureId != -1) {
+                        Game::SceneObject obj;
+                        obj.textureId = textureId;
+
+                        // [Fix] terrain.width/height do .dmap representam a area em TILES (footprint no chao),
+                        // nao o tamanho em pixels da textura. Usar esses valores direto no DrawSprite fazia
+                        // arvores/objetos renderizarem como sprites minusculos (poucos pixels) e praticamente invisiveis.
+                        if (pixelW > 0 && pixelH > 0) {
+                            obj.width = pixelW; obj.height = pixelH;
+                        }
+                        else {
+                            obj.width = terrain.width; obj.height = terrain.height;
+                        }
+
+                        obj.mapX = (float)terrain.mapX; obj.mapY = (float)terrain.mapY;
+                        obj.offsetX = terrain.offsetX; obj.offsetY = terrain.offsetY;
+                        m_sceneObjects.push_back(obj);
+                    }
+                }
+
+                // [Portais] Cada entrada de m_currentDMap.portals marca uma celula de teletransporte
+                // (.dmap). O efeito visual "exit" (3DEffect.ini) e disparado fixo na posicao do
+                // mundo de cada portal e ja possui LoopTime muito alto (praticamente continuo).
+                for (const auto& portal : m_currentDMap.portals) {
+                    LoadEffect("Exit", (float)portal.mapX + 0.5f, (float)portal.mapY + 0.5f, 0.0f, 0.0f, false, -1, 0.0f, false);
                 }
             }
         }
@@ -1139,7 +1279,117 @@ public:
         return m_monsterCache[key];
     }
 
-    void LoadEffect(const std::string& effectName, float mapX = -1.0f, float mapY = -1.0f, float screenOffsetX = 0.0f, float screenOffsetY = 0.0f, bool isDamage = false, int overrideDelay = -1, float angle = 0.0f) {
+    // [NPCs] Resolve e cacheia a aparencia visual de um NPC a partir do lookfaceBase
+    // (lookface do cq_npc.csv sem o ultimo digito de direcao).
+    CachedNpcRender& GetNpcRender(uint32_t lookfaceBase) {
+        auto cacheIt = m_npcRenderCache.find(lookfaceBase);
+        if (cacheIt != m_npcRenderCache.end()) return cacheIt->second;
+
+        CachedNpcRender render;
+
+        if (lookfaceBase < 1000) {
+            // npc.ini [NpcTypeNNN] -> 3DSimpleObj.ini [ObjIDTypeYYYY]
+            render.isSimpleObj = true;
+            auto typeIt = m_npcTypeConfigs.find(lookfaceBase);
+            if (typeIt != m_npcTypeConfigs.end()) {
+                auto& typeCfg = typeIt->second;
+                render.asb = typeCfg.asb;
+                render.adb = typeCfg.adb;
+
+                auto objIt = m_simpleObjConfigs.find(typeCfg.simpleObjId);
+                if (objIt != m_simpleObjConfigs.end()) {
+                    for (auto& part : objIt->second.parts) {
+                        Resource::C3Model model;
+                        int texId = -1;
+
+                        if (m_c3Paths.count(part.mesh)) {
+                            model = m_resource.LoadC3Model(m_c3Paths[part.mesh]);
+                        }
+                        if (m_ddsPaths.count(part.texture)) {
+                            auto texData = m_resource.GetFileData(m_ddsPaths[part.texture]);
+                            if (!texData.empty()) texId = m_renderer.LoadTextureFromMemory(texData.data(), texData.size());
+                        }
+
+                        // Animacao StandBy do NPC (o modelo fica parado exibindo essa motion).
+                        if (m_motionPaths.count(typeCfg.standByMotion)) {
+                            Resource::C3Model animModel = m_resource.LoadC3Model(m_motionPaths[typeCfg.standByMotion]);
+                            ApplyAnim(model, animModel);
+                        }
+
+                        render.partModels.push_back(model);
+                        render.partTextureIds.push_back(texId);
+                    }
+                }
+            }
+        }
+        else {
+            // NpcX.ini [NNNN]: se Look for um tipo de boneco valido (1-4), monta como
+            // personagem completo; caso contrario, reusa o pipeline de monstro (mesh direto).
+            auto xIt = m_npcXConfigs.find(lookfaceBase);
+            if (xIt != m_npcXConfigs.end()) {
+                auto& xCfg = xIt->second;
+
+                if (xCfg.look >= 1 && xCfg.look <= 4) {
+                    render.isSimpleObj = false;
+                    render.isMonsterStyle = false;
+
+                    uint32_t modelPrefix = xCfg.look;
+                    Resource::C3Model animIdle = GetActionModel((Game::ModelType)modelPrefix, xCfg.rWeapon, xCfg.lWeapon, Game::RoleActionType::StandBy);
+
+                    uint32_t baseArmorId = (modelPrefix * 1000000) + xCfg.armor;
+                    if (m_armorConfigs.count(baseArmorId)) {
+                        auto& armCfg = m_armorConfigs[baseArmorId];
+                        for (auto& pCfg : armCfg.parts) {
+                            Resource::C3Model model;
+                            int texId = -1;
+                            if (m_c3Paths.count(pCfg.mesh)) {
+                                model = m_resource.LoadC3Model(m_c3Paths[pCfg.mesh]);
+                                ApplyAnim(model, animIdle);
+                            }
+                            if (m_ddsPaths.count(pCfg.texture)) {
+                                auto texData = m_resource.GetFileData(m_ddsPaths[pCfg.texture]);
+                                if (!texData.empty()) texId = m_renderer.LoadTextureFromMemory(texData.data(), texData.size());
+                            }
+                            render.asb = pCfg.asb; render.adb = pCfg.adb;
+                            render.partModels.push_back(model);
+                            render.partTextureIds.push_back(texId);
+                        }
+                    }
+
+                    if (xCfg.armet != 0) {
+                        uint32_t baseArmetId = (modelPrefix * 1000000) + xCfg.armet;
+                        if (m_armetConfigs.count(baseArmetId)) {
+                            auto& armCfg = m_armetConfigs[baseArmetId];
+                            for (auto& pCfg : armCfg.parts) {
+                                Resource::C3Model model;
+                                int texId = -1;
+                                if (m_c3Paths.count(pCfg.mesh)) {
+                                    model = m_resource.LoadC3Model(m_c3Paths[pCfg.mesh]);
+                                    ApplyAnim(model, animIdle);
+                                }
+                                if (m_ddsPaths.count(pCfg.texture)) {
+                                    auto texData = m_resource.GetFileData(m_ddsPaths[pCfg.texture]);
+                                    if (!texData.empty()) texId = m_renderer.LoadTextureFromMemory(texData.data(), texData.size());
+                                }
+                                render.partModels.push_back(model);
+                                render.partTextureIds.push_back(texId);
+                            }
+                        }
+                    }
+                }
+                else {
+                    // Look nao e um tipo de boneco (ex.: monstro/animal) -> mesh direto via GetMonsterRender.
+                    render.isMonsterStyle = true;
+                    render.monsterMeshId = xCfg.look;
+                }
+            }
+        }
+
+        m_npcRenderCache[lookfaceBase] = render;
+        return m_npcRenderCache[lookfaceBase];
+    }
+
+    void LoadEffect(const std::string& effectName, float mapX = -1.0f, float mapY = -1.0f, float screenOffsetX = 0.0f, float screenOffsetY = 0.0f, bool isDamage = false, int overrideDelay = -1, float angle = 0.0f, bool isScreenFixed = false) {
         m_currentEffectName = effectName;
 
         auto it = m_effectConfigs.find(effectName);
@@ -1170,6 +1420,7 @@ public:
         newActiveEffect.isDamageNumber = isDamage;
         newActiveEffect.currentLife = 0.0f;
         newActiveEffect.maxLife = 2.0f;
+        newActiveEffect.isScreenFixed = isScreenFixed;
 
         if (newActiveEffect.config.delay <= 0) {
             newActiveEffect.isWaitingDelay = false;
@@ -1234,19 +1485,12 @@ public:
 
         if (foundEffectIdx != m_activeRegionEffectIdx) {
             m_activeRegionEffectIdx = foundEffectIdx;
-            m_regionEffectRetriggerTimer = 0.0f;
             if (foundEffectIdx != -1) {
-                LoadEffect(m_mapRegions[foundEffectIdx].effectName, m_player.mapX, m_player.mapY);
-            }
-        }
-        else if (foundEffectIdx != -1) {
-            // A maioria dos efeitos de regiao (ex: WindPlain) tem LoopTime=1 e termina rapido;
-            // redispara periodicamente para dar sensacao de efeito ambiente continuo enquanto
-            // o player permanecer dentro do range.
-            m_regionEffectRetriggerTimer -= deltaTime;
-            if (m_regionEffectRetriggerTimer <= 0.0f) {
-                LoadEffect(m_mapRegions[foundEffectIdx].effectName, m_player.mapX, m_player.mapY);
-                m_regionEffectRetriggerTimer = 2.0f;
+                // Sem mapX/mapY: o efeito e desenhado direto no centro da tela (isScreenFixed
+                // ignora o jumpZ do personagem, diferente do efeito de agua que acompanha o pulo).
+                // Dispara uma unica vez ao entrar na regiao; so volta a aparecer se sair do
+                // range e entrar novamente (nao repete enquanto o player permanecer dentro).
+                LoadEffect(m_mapRegions[foundEffectIdx].effectName, -1.0f, -1.0f, 0.0f, 0.0f, false, -1, 0.0f, true);
             }
         }
     }
@@ -2220,6 +2464,17 @@ public:
                             if (!IsCellBlocked(targetX, targetY)) {
                                 m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.isMoving = true;
                             }
+                            else {
+                                // Destino bloqueado (agua, obstaculo, escada em area intransitavel, etc.):
+                                // caminha em linha reta ate o ultimo ponto valido antes do bloqueio,
+                                // em vez de simplesmente ignorar o clique.
+                                float walkX, walkY;
+                                FindWalkableTarget(m_player.mapX, m_player.mapY, targetX, targetY, walkX, walkY);
+                                float walkDist = std::sqrt((walkX - m_player.mapX) * (walkX - m_player.mapX) + (walkY - m_player.mapY) * (walkY - m_player.mapY));
+                                if (walkDist > 0.05f) {
+                                    m_player.targetMapX = walkX; m_player.targetMapY = walkY; m_player.isMoving = true;
+                                }
+                            }
                         }
                     }
                     else if (leftClicked) {
@@ -2573,6 +2828,30 @@ public:
             if (m_weaponEffectFrame >= 30) m_weaponEffectFrame = 0;
         }
 
+        // [Animacao StandBy dos NPCs] Avanca o frame da motion parada (StandByMotion) para
+        // cada NPC visivel no mapa atual, em loop, igual e feito com monstros/player.
+        for (auto& npc : m_npcs) {
+            npc.animTimer += deltaTime;
+            if (npc.animTimer >= (1.0f / 8.0f)) {
+                npc.animTimer -= (1.0f / 8.0f);
+                npc.currentFrame++;
+
+                auto& render = GetNpcRender((uint32_t)npc.cacheIndex);
+                int maxFrames = 1;
+                if (render.isMonsterStyle) {
+                    auto& monsterRender = GetMonsterRender(render.monsterMeshId, 100);
+                    if (monsterRender.model.isValid && !monsterRender.model.motions.empty()) {
+                        maxFrames = monsterRender.model.motions[0].frameCount;
+                    }
+                }
+                else if (!render.partModels.empty() && render.partModels[0].isValid && !render.partModels[0].motions.empty()) {
+                    maxFrames = render.partModels[0].motions[0].frameCount;
+                }
+                if (maxFrames <= 0) maxFrames = 1;
+                if (npc.currentFrame >= maxFrames) npc.currentFrame = 0;
+            }
+        }
+
         std::vector<Game::MonsterEntity> spawnedMonsters;
 
         for (auto it = m_monsters.begin(); it != m_monsters.end(); ) {
@@ -2828,6 +3107,7 @@ public:
         renderQueue.push_back({ m_player.mapX + m_player.mapY, 0, 0 });
         for (size_t i = 0; i < m_monsters.size(); i++) renderQueue.push_back({ m_monsters[i].mapX + m_monsters[i].mapY, 1, (int)i });
         for (size_t i = 0; i < m_sceneObjects.size(); i++) renderQueue.push_back({ m_sceneObjects[i].mapX + m_sceneObjects[i].mapY, 2, (int)i });
+        for (size_t i = 0; i < m_npcs.size(); i++) renderQueue.push_back({ m_npcs[i].mapX + m_npcs[i].mapY, 3, (int)i });
         std::sort(renderQueue.begin(), renderQueue.end(), [](const RenderNode& a, const RenderNode& b) { return a.depth < b.depth; });
 
         for (const auto& node : renderQueue) {
@@ -3061,13 +3341,42 @@ public:
                 SetSpriteUV(0.0f, 0.0f, 1.0f, 1.0f);
                 m_renderer.DrawSprite(obj.textureId, (int)zX, (int)zY, (int)zW, (int)zH);
             }
+            else if (node.type == 3) {
+                auto& npc = m_npcs[node.index];
+                auto& render = GetNpcRender((uint32_t)npc.cacheIndex);
+
+                auto [nWorldX, nWorldY] = coordSystem.MapToScreen(npc.mapX, npc.mapY);
+                float drawX = nWorldX - m_cameraX; float drawY = nWorldY - m_cameraY;
+                float zX = cx + (drawX - cx) * m_zoom; float zY = cy + (drawY - cy) * m_zoom;
+
+                if (render.isMonsterStyle) {
+                    auto& monsterRender = GetMonsterRender(render.monsterMeshId, 100);
+                    if (monsterRender.model.isValid) {
+                        m_renderer.DrawMesh3D(monsterRender.model, zX, zY, monsterRender.textureId, npc.currentFrame, npc.facingAngle, 0.0f, false, m_zoom, nullptr, -1, 0, monsterRender.asb, monsterRender.adb, 1.0f, false, 0);
+                    }
+                }
+                else {
+                    for (size_t p = 0; p < render.partModels.size(); p++) {
+                        if (render.partModels[p].isValid) {
+                            m_renderer.DrawMesh3D(render.partModels[p], zX, zY, render.partTextureIds[p], npc.currentFrame, npc.facingAngle, 0.0f, false, m_zoom, nullptr, -1, 0, render.asb, render.adb, 1.0f, false, 0);
+                        }
+                    }
+                }
+
+                if (npc.nameTexId != -1) {
+                    int nameX = (int)zX - (npc.nameW / 2);
+                    int nameY = (int)zY - (int)(110 * m_zoom) - npc.nameH - 2;
+                    SetSpriteUV(0.0f, 0.0f, 1.0f, 1.0f);
+                    m_renderer.DrawSprite(npc.nameTexId, nameX, nameY, npc.nameW, npc.nameH);
+                }
+            }
         }
 
         for (auto& effect : m_activeEffects) {
             if (effect.isWaitingDelay || effect.isWaitingInterval || effect.isFinished) continue;
 
             float drawCx = cx;
-            float drawCy = cy - (m_player.jumpZ * m_zoom);
+            float drawCy = cy - (effect.isScreenFixed ? 0.0f : (m_player.jumpZ * m_zoom));
 
             if (effect.mapX != -1.0f && effect.mapY != -1.0f) {
                 auto [eWorldX, eWorldY] = coordSystem.MapToScreen(effect.mapX, effect.mapY);

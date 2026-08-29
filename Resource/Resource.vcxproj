@@ -163,6 +163,7 @@
     <ClInclude Include="Resource_Effect.h" />
     <ClInclude Include="Resource_Map.h" />
     <ClInclude Include="Resource_MusicRegion.h" />
+    <ClInclude Include="Resource_Npc.h" />
     <ClInclude Include="Resource_Region.h" />
     <ClInclude Include="Resource_Utils.h" />
   </ItemGroup>
