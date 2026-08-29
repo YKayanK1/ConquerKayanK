@@ -199,7 +199,32 @@ D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(214,21): wa
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource_Utils.h(52,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(224,21): warning C4251: 'Resource::MusicRegionEntry::titleMusic': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
+  (compiling source file '/Resource.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(227,34): warning C4251: 'Resource::MusicRegionEntry::musics': 'std::vector<std::string,std::allocator<std::string>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
+  (compiling source file '/Resource.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<std::string,std::allocator<std::string>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(228,26): warning C4251: 'Resource::MusicRegionEntry::musicTimes': 'std::vector<int,std::allocator<int>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
+  (compiling source file '/Resource.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<int,std::allocator<int>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(244,21): warning C4251: 'Resource::MapRegionEntry::regionName': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MapRegionEntry'
+  (compiling source file '/Resource.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(245,21): warning C4251: 'Resource::MapRegionEntry::effectName': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MapRegionEntry'
+  (compiling source file '/Resource.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource_Utils.h(75,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
   (compiling source file '/Resource.cpp')
   
 D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource_C3.h(104,48): warning C4018: '<': signed/unsigned mismatch

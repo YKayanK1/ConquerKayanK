@@ -1,0 +1,7 @@
+[MapDump] access value counts:
+  access=0 count=1587
+  access=1 count=7629
+[MapDump] surface value counts:
+  surface=0 count=9216
+[MapDump] access breakdown per surface:
+  surface=0 -> access0:1587 access1:7629 

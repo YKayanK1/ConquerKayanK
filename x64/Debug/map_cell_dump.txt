@@ -1,0 +1,23 @@
+[MapDump] access value counts:
+  access=0 count=757519
+  access=1 count=291057
+[MapDump] surface value counts:
+  surface=0 count=5865
+  surface=1 count=282489
+  surface=2 count=44
+  surface=3 count=757492
+  surface=6 count=1
+  surface=9 count=2116
+  surface=10 count=7
+  surface=12 count=373
+  surface=15 count=189
+[MapDump] access breakdown per surface:
+  surface=0 -> access0:3927 access1:1938 
+  surface=1 -> access0:17492 access1:264997 
+  surface=2 -> access0:44 
+  surface=3 -> access0:735186 access1:22306 
+  surface=6 -> access0:1 
+  surface=9 -> access0:368 access1:1748 
+  surface=10 -> access0:7 
+  surface=12 -> access0:372 access1:1 
+  surface=15 -> access0:122 access1:67 

@@ -13,6 +13,7 @@
 #include <cctype>
 
 #include <DDSTextureLoader.h>
+#include <WICTextureLoader.h>
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -366,6 +367,10 @@ namespace Graphics {
 
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> newTexture;
             HRESULT hr = DirectX::CreateDDSTextureFromMemory(D3DContext::GetInstance().device.Get(), data, size, nullptr, newTexture.GetAddressOf());
+            if (FAILED(hr)) {
+                // Fallback: tenta decodificar via WIC (suporta JPG, PNG, GIF, etc.)
+                hr = DirectX::CreateWICTextureFromMemory(D3DContext::GetInstance().device.Get(), data, size, nullptr, newTexture.GetAddressOf());
+            }
             if (FAILED(hr)) return -1;
             int id = nextTextureId++; textures[id] = newTexture; return id;
         }

@@ -36,6 +36,12 @@
     <ClInclude Include="Resource_Effect.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Resource_MusicRegion.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Resource_Region.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Resource.cpp">

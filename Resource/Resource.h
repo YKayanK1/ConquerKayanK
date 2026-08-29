@@ -215,6 +215,41 @@ namespace Resource {
         uint32_t tileSize = 0;
     };
 
+    // ini\MusicRegion.ini: define regioes retangulares (em tiles) de um mapa que
+    // possuem musica de entrada (TitleMusic) e uma lista de musicas ambiente (MusicN)
+    // que tocam em sequencia com DelayTime segundos entre elas.
+    struct RESOURCE_API MusicRegionEntry {
+        uint32_t mapId = 0;
+        int boundX = 0, boundY = 0, boundCX = 0, boundCY = 0;
+        std::string titleMusic;
+        int titleMusicTime = 0;
+        int amount = 0;
+        std::vector<std::string> musics;
+        std::vector<int> musicTimes;
+        int delayTime = 0;
+
+        bool Contains(int x, int y) const {
+            return x >= boundX && x < boundX + boundCX && y >= boundY && y < boundY + boundCY;
+        }
+    };
+
+    // ini\region.ini: define regioes retangulares (em tiles) de um mapa com um nome de
+    // exibicao (mostrado sobre o minimap) e, opcionalmente, um efeito 3D (secao de
+    // 3DEffect.ini) que e acionado enquanto o player estiver dentro do range.
+    // Layout de cada linha: MapId Type X Y CX CY RegionName EffectName ... (campos finais ignorados)
+    struct RESOURCE_API MapRegionEntry {
+        uint32_t mapId = 0;
+        int type = 0;
+        int x = 0, y = 0, cx = 0, cy = 0;
+        std::string regionName;
+        std::string effectName;
+
+        bool Contains(int px, int py) const {
+            if (cx <= 0 || cy <= 0) return false; // sem bounds = entrada padrao/fallback, nao um range real
+            return px >= x && px < x + cx && py >= y && py < y + cy;
+        }
+    };
+
     class RESOURCE_API Manager {
     public:
         Manager();
@@ -241,6 +276,9 @@ namespace Resource {
         TMEData ParseTME(const std::string& filePath);
 
         std::unordered_map<std::string, std::string> ParseActionSound(const std::string& filePath);
+
+        std::vector<MusicRegionEntry> ParseMusicRegions(const std::string& filePath);
+        std::vector<MapRegionEntry> ParseRegions(const std::string& filePath);
 
     private:
         struct Impl;

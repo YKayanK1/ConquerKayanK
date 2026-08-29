@@ -5,6 +5,8 @@
 #include "Resource_C3.h"
 #include "Resource_Map.h"
 #include "Resource_Effect.h" 
+#include "Resource_MusicRegion.h"
+#include "Resource_Region.h"
 
 #include <fstream>
 #include <iostream>
@@ -149,6 +151,14 @@ namespace Resource {
         std::unordered_map<std::string, std::string> ParseActionSound(const std::string& path) {
             return ParseActionSoundData(GetFileData(path));
         }
+
+        std::vector<MusicRegionEntry> ParseMusicRegions(const std::string& path) {
+            return ParseMusicRegionData(GetFileData(path));
+        }
+
+        std::vector<MapRegionEntry> ParseRegions(const std::string& path) {
+            return ParseRegionData(GetFileData(path));
+        }
     };
 
     Manager::Manager() : pImpl(new Impl()) {}
@@ -162,6 +172,8 @@ namespace Resource {
     PulData Manager::LoadPul(const std::string& path) { return pImpl->LoadPul(path); }
     std::unordered_map<uint32_t, GameMapRecord> Manager::LoadGameMapDat(const std::string& p) { return pImpl->LoadGameMapDat(p); }
     std::string Manager::ParseAniSection(const std::string& ani, const std::string& sec) { return pImpl->ParseAniSection(ani, sec); }
+    std::vector<MusicRegionEntry> Manager::ParseMusicRegions(const std::string& p) { return pImpl->ParseMusicRegions(p); }
+    std::vector<MapRegionEntry> Manager::ParseRegions(const std::string& p) { return pImpl->ParseRegions(p); }
 
     std::unordered_map<std::string, EffectConfig> Manager::Parse3DEffects(const std::string& path) { return pImpl->Parse3DEffects(path); }
     std::unordered_map<uint32_t, std::string> Manager::ParseResIni(const std::string& path) { return pImpl->ParseResIni(path); }

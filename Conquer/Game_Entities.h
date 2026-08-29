@@ -82,6 +82,7 @@ namespace Game {
         float alertTimer = 0.0f;
         float attackCooldown = 0.0f;
         bool isChasing = false;
+        bool isInWater = false;
     };
 
     struct MonsterEntity {

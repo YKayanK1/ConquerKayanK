@@ -37,6 +37,29 @@ namespace Resource {
         }
     };
 
+    // Le apenas as dimensoes de imagem (largura/altura em pixels) sem decodificar todo o conteudo.
+    // Suporta DDS, TGA e BMP. Usado para corrigir o tamanho de sprites cujo width/height do .dmap
+    // na verdade representa a area em tiles (footprint), nao o tamanho em pixels da textura.
+    static bool ReadImagePixelSize(const std::vector<uint8_t>& data, int& outWidth, int& outHeight) {
+        if (data.size() > 128 && data[0] == 'D' && data[1] == 'D' && data[2] == 'S' && data[3] == ' ') {
+            outHeight = (int)(data[12] | (data[13] << 8) | (data[14] << 16) | (data[15] << 24));
+            outWidth = (int)(data[16] | (data[17] << 8) | (data[18] << 16) | (data[19] << 24));
+            return outWidth > 0 && outHeight > 0;
+        }
+        if (data.size() > 54 && data[0] == 'B' && data[1] == 'M') {
+            outWidth = (int)(data[18] | (data[19] << 8) | (data[20] << 16) | (data[21] << 24));
+            outHeight = (int)(data[22] | (data[23] << 8) | (data[24] << 16) | (data[25] << 24));
+            if (outHeight < 0) outHeight = -outHeight;
+            return outWidth > 0 && outHeight > 0;
+        }
+        if (data.size() > 18 && data[2] == 2) {
+            outWidth = data[12] | (data[13] << 8);
+            outHeight = data[14] | (data[15] << 8);
+            return outWidth > 0 && outHeight > 0;
+        }
+        return false;
+    }
+
     static uint32_t HashFilename(const std::string& filename) {
         std::string str = filename;
         for (char& c : str) {

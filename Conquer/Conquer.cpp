@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include <thread>
+#include <fstream>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
@@ -19,6 +20,7 @@
 #include "../Graphics/Graphics.h"
 #include "../Graphics/Graphics_D3D.h"
 #include "../Resource/Resource.h"
+#include "../Resource/Resource_Utils.h"
 #include "../Audio/Audio.h"
 
 #include "Engine_Window.h"
@@ -43,6 +45,24 @@ LRESULT CALLBACK HookWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
         return true;
     return CallWindowProc(OriginalWndProc, hWnd, msg, wParam, lParam);
+}
+
+// Computes the effective frame count of a C3Model for effect looping purposes.
+// Mirrors C3Studio's per-mesh timelines: some PHY meshes have no MOTI (bone
+// animation) or PTCL (particles) at all and are driven purely by their own
+// alpha/draw/changeTex keyframe tracks (e.g. tornado part 1, an atlas-only
+// mesh). Without considering those tracks here, such parts fell back to a
+// hardcoded 30-frame loop and got cut off mid-cycle.
+static int GetModelMaxFrame(const Resource::C3Model& model) {
+    int maxFrames = 0;
+    for (const auto& motion : model.motions) maxFrames = (std::max)(maxFrames, motion.frameCount);
+    for (const auto& ptcl : model.ptcls) maxFrames = (std::max)(maxFrames, (int)ptcl.frames.size());
+    for (const auto& phy : model.phys) {
+        for (const auto& k : phy.alphaKeys) maxFrames = (std::max)(maxFrames, k.frame);
+        for (const auto& k : phy.drawKeys) maxFrames = (std::max)(maxFrames, k.frame);
+        for (const auto& k : phy.changeTexKeys) maxFrames = (std::max)(maxFrames, k.frame);
+    }
+    return maxFrames;
 }
 
 namespace Game {
@@ -209,13 +229,30 @@ public:
     uint32_t m_currentArmetId = 0;
     uint32_t m_currentGarmentId = 0;
 
+    // Sons ambiente / musica por regiao do mapa (ini\MusicRegion.ini)
+    std::vector<Resource::MusicRegionEntry> m_musicRegions;
+    int m_activeMusicRegion = -1;      // indice em m_musicRegions da regiao ativa (-1 = nenhuma)
+    int m_activeMusicIndex = -1;       // indice da faixa MusicN tocando atualmente dentro da regiao (-1 = tocando TitleMusic)
+    float m_musicTrackTimer = 0.0f;    // tempo restante da faixa/titulo atual antes de avancar
+    float m_musicDelayTimer = 0.0f;    // atraso pendente entre faixas (DelayTime)
+    bool m_musicDelayPending = false;
+
+    // Regioes de nome/efeito do mapa (ini\region.ini): nome discreto sobre o minimap
+    // e efeito 3D acionado enquanto o player estiver dentro do range x,y -> x+cx,y+cy.
+    std::vector<Resource::MapRegionEntry> m_mapRegions;
+    int m_activeRegionNameIdx = -1;   // regiao (com regionName) que definiu o texto atual
+    int m_regionNameTexId = -1;
+    int m_regionNameW = 0, m_regionNameH = 0;
+    int m_activeRegionEffectIdx = -1; // regiao (com effectName) cujo efeito esta ativo
+    float m_regionEffectRetriggerTimer = 0.0f; // reagenda o efeito periodicamente (LoopTime=1 finaliza rapido)
+
     struct ExpandedMonsterEntity : public Game::MonsterEntity {
         uint32_t meshId;
     };
     std::vector<ExpandedMonsterEntity> m_monsters;
     std::vector<Game::SceneObject> m_sceneObjects;
 
-    Resource::C3Model m_hairIdleModel, m_hairWalkModel, m_hairRunModel, m_hairJumpModel, m_hairAlertModel;
+    Resource::C3Model m_hairIdleModel, m_hairWalkModel, m_hairRunModel, m_hairJumpModel, m_hairAlertModel, m_hairSwimModel;
     std::unordered_map<int, Resource::C3Model> m_hairAttackModels;
 
     int m_hairTextureId = -1;
@@ -284,6 +321,7 @@ public:
         Resource::C3Model runModel;
         Resource::C3Model jumpModel;
         Resource::C3Model alertModel;
+        Resource::C3Model swimModel;
         std::unordered_map<int, Resource::C3Model> attackModels;
         int textureId = -1;
         int asb = 5;
@@ -355,6 +393,105 @@ public:
     float m_cameraX = 0.0f, m_cameraY = 0.0f;
     float m_zoom = 1.0f;
     int m_mouseX = 0, m_mouseY = 0;
+
+    // [Colisao/Agua] Acesso as celulas do mapa carregado.
+    // access == 1 (Inaccessible) bloqueia movimento; surface == 1 identifica agua (nao bloqueante, apenas altera animacao).
+    const Resource::MapCell* GetMapCellAt(int x, int y) const {
+        if (!m_currentDMap.isValid) return nullptr;
+        if (x < 0 || y < 0 || (uint32_t)x >= m_currentDMap.width || (uint32_t)y >= m_currentDMap.height) return nullptr;
+        return &m_currentDMap.cells[(size_t)y * m_currentDMap.width + (size_t)x];
+    }
+
+    bool IsCellBlocked(float mapX, float mapY) const {
+        const Resource::MapCell* cell = GetMapCellAt((int)std::floor(mapX), (int)std::floor(mapY));
+        if (!cell) return true; // fora do mapa carregado = bloqueado
+        return cell->access == 1;
+    }
+
+    bool IsCellWater(float mapX, float mapY) const {
+        const Resource::MapCell* cell = GetMapCellAt((int)std::floor(mapX), (int)std::floor(mapY));
+        if (!cell) return false;
+        return cell->surface == 1;
+    }
+
+    // [Sons ambiente do mapa] ini\MusicRegion.ini define regioes retangulares (em tiles)
+    // que possuem uma musica de "entrada" (TitleMusic) tocada uma vez ao entrar na regiao,
+    // seguida por uma playlist de MusicN faixas que se alternam com DelayTime segundos de
+    // intervalo entre cada uma, em loop enquanto o player permanecer dentro da regiao.
+    void UpdateMapMusic(float deltaTime) {
+        if (m_musicRegions.empty()) return;
+
+        int px = (int)std::floor(m_player.mapX);
+        int py = (int)std::floor(m_player.mapY);
+
+        int foundRegion = -1;
+        for (size_t i = 0; i < m_musicRegions.size(); i++) {
+            if (m_musicRegions[i].Contains(px, py)) { foundRegion = (int)i; break; }
+        }
+
+        if (foundRegion != m_activeMusicRegion) {
+            m_activeMusicRegion = foundRegion;
+            m_activeMusicIndex = -1;
+            m_musicTrackTimer = 0.0f;
+            m_musicDelayTimer = 0.0f;
+            m_musicDelayPending = false;
+
+            if (foundRegion == -1) {
+                m_audio.StopMusic();
+                return;
+            }
+
+            const auto& region = m_musicRegions[foundRegion];
+            if (!region.titleMusic.empty()) {
+                m_audio.PlayMusic(m_clientPath + "\\" + region.titleMusic, false);
+                m_musicTrackTimer = (float)region.titleMusicTime;
+            }
+            else {
+                m_musicTrackTimer = 0.0f; // dispara a primeira faixa da playlist imediatamente
+            }
+            return;
+        }
+
+        if (m_activeMusicRegion == -1) return;
+
+        const auto& region = m_musicRegions[m_activeMusicRegion];
+        if (region.amount <= 0 || region.musics.empty()) return;
+
+        if (m_musicDelayPending) {
+            m_musicDelayTimer -= deltaTime;
+            if (m_musicDelayTimer <= 0.0f) {
+                m_musicDelayPending = false;
+                m_musicTrackTimer = 0.0f;
+            }
+            else {
+                return;
+            }
+        }
+
+        m_musicTrackTimer -= deltaTime;
+        if (m_musicTrackTimer <= 0.0f) {
+            m_activeMusicIndex++;
+            if (m_activeMusicIndex >= (int)region.musics.size() || m_activeMusicIndex >= region.amount) {
+                m_activeMusicIndex = 0;
+            }
+
+            const std::string& track = region.musics[m_activeMusicIndex];
+            int trackTime = (m_activeMusicIndex < (int)region.musicTimes.size()) ? region.musicTimes[m_activeMusicIndex] : 60;
+
+            if (!track.empty()) {
+                m_audio.PlayMusic(m_clientPath + "\\" + track, false);
+            }
+
+            if (region.delayTime > 0) {
+                m_musicDelayPending = true;
+                m_musicDelayTimer = (float)region.delayTime;
+                m_musicTrackTimer = (float)trackTime; // usado apos o delay expirar (reavaliado no proximo ciclo)
+            }
+            else {
+                m_musicTrackTimer = (float)trackTime;
+            }
+        }
+    }
 
     int m_texMainDialog1 = -1;
     int m_texMainDialog2 = -1;
@@ -799,16 +936,37 @@ public:
         ChangeGarment(Game::ModelType::SmallFemale, m_currentGarmentId);
 
         auto gameMaps = m_resource.LoadGameMapDat("ini\\GameMap.dat");
-        if (gameMaps.count(1005)) {
-            m_currentDMap = m_resource.LoadDMap(gameMaps[1005].dmapPath);
+        const int currentMapId = 1002; // TwinCity: possui arvores, agua e elevacao de terreno (escadas)
+
+        auto allMusicRegions = m_resource.ParseMusicRegions("ini\\MusicRegion.ini");
+        m_musicRegions.clear();
+        for (auto& region : allMusicRegions) {
+            if (region.mapId == (uint32_t)currentMapId) m_musicRegions.push_back(region);
+        }
+        m_activeMusicRegion = -1;
+        m_activeMusicIndex = -1;
+        m_musicTrackTimer = 0.0f;
+        m_musicDelayTimer = 0.0f;
+        m_musicDelayPending = false;
+
+        auto allMapRegions = m_resource.ParseRegions("ini\\region.ini");
+        m_mapRegions.clear();
+        for (auto& region : allMapRegions) {
+            if (region.mapId == (uint32_t)currentMapId) m_mapRegions.push_back(region);
+        }
+        m_activeRegionNameIdx = -1;
+        m_activeRegionEffectIdx = -1;
+
+        if (gameMaps.count(currentMapId)) {
+            m_currentDMap = m_resource.LoadDMap(gameMaps[currentMapId].dmapPath);
             if (m_currentDMap.isValid) {
                 m_player.mapX = m_currentDMap.width / 2.0f;
                 m_player.mapY = m_currentDMap.height / 2.0f;
 
                 m_currentPul = m_resource.LoadPul(m_currentDMap.puzzleFile);
-                m_tileSize = gameMaps[1005].tileSize > 0 ? gameMaps[1005].tileSize : 256;
+                m_tileSize = gameMaps[currentMapId].tileSize > 0 ? gameMaps[currentMapId].tileSize : 256;
 
-                LoadMiniMap(1005);
+                LoadMiniMap(currentMapId);
 
                 if (m_currentPul.isValid) {
                     for (int16_t tileId : m_currentPul.tiles) {
@@ -830,8 +988,19 @@ public:
                         if (!terrainTexData.empty()) {
                             Game::SceneObject obj;
                             obj.textureId = m_renderer.LoadTextureFromMemory(terrainTexData.data(), terrainTexData.size());
+
+                            // [Fix] terrain.width/height do .dmap representam a area em TILES (footprint no chao),
+                            // nao o tamanho em pixels da textura. Usar esses valores direto no DrawSprite fazia
+                            // arvores/objetos renderizarem como sprites minusculos (poucos pixels) e praticamente invisiveis.
+                            int pixelW = 0, pixelH = 0;
+                            if (Resource::ReadImagePixelSize(terrainTexData, pixelW, pixelH)) {
+                                obj.width = pixelW; obj.height = pixelH;
+                            }
+                            else {
+                                obj.width = terrain.width; obj.height = terrain.height;
+                            }
+
                             obj.mapX = (float)terrain.mapX; obj.mapY = (float)terrain.mapY;
-                            obj.width = terrain.width; obj.height = terrain.height;
                             obj.offsetX = terrain.offsetX; obj.offsetY = terrain.offsetY;
                             m_sceneObjects.push_back(obj);
                         }
@@ -1031,6 +1200,58 @@ public:
         m_activeEffects.push_back(newActiveEffect);
     }
 
+    // [Nome de regiao + efeito 3D] ini\region.ini: enquanto o player estiver dentro do
+    // range x,y -> x+cx,y+cy de uma entrada, exibe seu regionName (texto discreto sobre
+    // o minimap) e mantem o effectName correspondente tocando via LoadEffect/3DEffect.ini.
+    void UpdateMapRegions(float deltaTime) {
+        if (m_mapRegions.empty()) return;
+
+        int px = (int)std::floor(m_player.mapX);
+        int py = (int)std::floor(m_player.mapY);
+
+        int foundNameIdx = -1;
+        int foundEffectIdx = -1;
+        for (size_t i = 0; i < m_mapRegions.size(); i++) {
+            const auto& region = m_mapRegions[i];
+            if (!region.Contains(px, py)) continue;
+            if (foundNameIdx == -1 && !region.regionName.empty()) foundNameIdx = (int)i;
+            if (foundEffectIdx == -1 && !region.effectName.empty()) foundEffectIdx = (int)i;
+        }
+
+        if (foundNameIdx != m_activeRegionNameIdx) {
+            m_activeRegionNameIdx = foundNameIdx;
+            if (m_regionNameTexId != -1) { m_renderer.DeleteTexture(m_regionNameTexId); m_regionNameTexId = -1; }
+
+            if (foundNameIdx != -1) {
+                const std::string& name = m_mapRegions[foundNameIdx].regionName;
+                std::wstring wName(name.begin(), name.end());
+                auto texData = Game::GenerateTextTexture(m_renderer, wName, RGB(255, 255, 255));
+                m_regionNameTexId = std::get<0>(texData);
+                m_regionNameW = std::get<1>(texData);
+                m_regionNameH = std::get<2>(texData);
+            }
+        }
+
+        if (foundEffectIdx != m_activeRegionEffectIdx) {
+            m_activeRegionEffectIdx = foundEffectIdx;
+            m_regionEffectRetriggerTimer = 0.0f;
+            if (foundEffectIdx != -1) {
+                LoadEffect(m_mapRegions[foundEffectIdx].effectName, m_player.mapX, m_player.mapY);
+            }
+        }
+        else if (foundEffectIdx != -1) {
+            // A maioria dos efeitos de regiao (ex: WindPlain) tem LoopTime=1 e termina rapido;
+            // redispara periodicamente para dar sensacao de efeito ambiente continuo enquanto
+            // o player permanecer dentro do range.
+            m_regionEffectRetriggerTimer -= deltaTime;
+            if (m_regionEffectRetriggerTimer <= 0.0f) {
+                LoadEffect(m_mapRegions[foundEffectIdx].effectName, m_player.mapX, m_player.mapY);
+                m_regionEffectRetriggerTimer = 2.0f;
+            }
+        }
+    }
+
+
     void LoadTME(const std::string& tmeFile, float startX, float startY, float angle) {
         if (tmeFile.empty() || tmeFile == "NULL") return;
 
@@ -1114,6 +1335,8 @@ public:
         Resource::C3Model animJump = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Jump);
         Resource::C3Model animAlert = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Alert);
         if (!animAlert.isValid || animAlert.motions.empty()) animAlert = animIdle;
+        Resource::C3Model animSwim = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Swim);
+        if (!animSwim.isValid || animSwim.motions.empty()) animSwim = animIdle;
 
         uint32_t modelPrefix = static_cast<uint32_t>(type);
         uint32_t baseGarmentId = (modelPrefix * 1000000) + garmentId;
@@ -1166,6 +1389,7 @@ public:
                     newPart.runModel = baseModel; ApplyWalkAnim(newPart.runModel, animRunL, animRunR);
                     newPart.jumpModel = baseModel; ApplyAnim(newPart.jumpModel, animJump);
                     newPart.alertModel = baseModel; ApplyAnim(newPart.alertModel, animAlert);
+                    newPart.swimModel = baseModel; ApplyAnim(newPart.swimModel, animSwim);
 
                     int attackTypes[] = { 401, 402, 403, 404, 405, 406, 407, 408, 409, 903 };
                     for (int at : attackTypes) {
@@ -1203,6 +1427,8 @@ public:
         Resource::C3Model animJump = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Jump);
         Resource::C3Model animAlert = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Alert);
         if (!animAlert.isValid || animAlert.motions.empty()) animAlert = animIdle;
+        Resource::C3Model animSwim = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Swim);
+        if (!animSwim.isValid || animSwim.motions.empty()) animSwim = animIdle;
 
         if (armetId == 0) {
             for (auto& p : m_currentArmetParts) {
@@ -1258,6 +1484,7 @@ public:
                     newPart.runModel = baseModel; ApplyWalkAnim(newPart.runModel, animRunL, animRunR);
                     newPart.jumpModel = baseModel; ApplyAnim(newPart.jumpModel, animJump);
                     newPart.alertModel = baseModel; ApplyAnim(newPart.alertModel, animAlert);
+                    newPart.swimModel = baseModel; ApplyAnim(newPart.swimModel, animSwim);
 
                     int attackTypes[] = { 401, 402, 403, 404, 405, 406, 407, 408, 409, 903 };
                     for (int at : attackTypes) {
@@ -1383,10 +1610,13 @@ public:
 
         Resource::C3Model animAlert = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Alert);
         if (!animAlert.isValid || animAlert.motions.empty()) animAlert = animIdle;
+        Resource::C3Model animSwim = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, Game::RoleActionType::Swim);
+        if (!animSwim.isValid || animSwim.motions.empty()) animSwim = animIdle;
 
         ApplyAnim(m_hairIdleModel, animIdle);
         ApplyAnim(m_hairJumpModel, animJump);
         ApplyAnim(m_hairAlertModel, animAlert);
+        ApplyAnim(m_hairSwimModel, animSwim);
         ApplyWalkAnim(m_hairWalkModel, animWalkL, animWalkR);
         ApplyWalkAnim(m_hairRunModel, animRunL, animRunR);
 
@@ -1459,6 +1689,7 @@ public:
                     newPart.runModel = baseModel;  ApplyWalkAnim(newPart.runModel, animRunL, animRunR);
                     newPart.jumpModel = baseModel; ApplyAnim(newPart.jumpModel, animJump);
                     newPart.alertModel = baseModel; ApplyAnim(newPart.alertModel, animAlert);
+                    newPart.swimModel = baseModel; ApplyAnim(newPart.swimModel, animSwim);
 
                     for (int at : attackTypes) {
                         Resource::C3Model aAnim = GetActionModel(m_player.modelType, m_player.rightHandWeaponId, m_player.leftHandWeaponId, (Game::RoleActionType)at);
@@ -1977,14 +2208,18 @@ public:
                         if (dist > 0.05f) m_player.facingAngle = -(std::atan2(dy, dx) - 0.78539f);
 
                         if (GetAsyncKeyState(VK_CONTROL) & 0x8000) {
-                            m_player.isJumping = true; m_player.isMoving = false;
-                            m_player.jumpTimer = 0.0f; m_player.startMapX = m_player.mapX; m_player.startMapY = m_player.mapY;
-                            m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.currentFrame = 0;
+                            if (!IsCellBlocked(targetX, targetY)) {
+                                m_player.isJumping = true; m_player.isMoving = false;
+                                m_player.jumpTimer = 0.0f; m_player.startMapX = m_player.mapX; m_player.startMapY = m_player.mapY;
+                                m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.currentFrame = 0;
 
-                            PlayActionSound((uint32_t)m_player.modelType, GetWeaponPrefix(m_player.rightHandWeaponId, m_player.leftHandWeaponId), 130);
+                                PlayActionSound((uint32_t)m_player.modelType, GetWeaponPrefix(m_player.rightHandWeaponId, m_player.leftHandWeaponId), 130);
+                            }
                         }
                         else {
-                            m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.isMoving = true;
+                            if (!IsCellBlocked(targetX, targetY)) {
+                                m_player.targetMapX = targetX; m_player.targetMapY = targetY; m_player.isMoving = true;
+                            }
                         }
                     }
                     else if (leftClicked) {
@@ -2154,8 +2389,10 @@ public:
                     m_player.isMoving = true;
                     m_player.facingAngle = -(std::atan2(dy, dx) - 0.78539f);
                     float speed = m_isRunning ? 7.0f : 3.0f;
-                    m_player.mapX += (dx / dist) * speed * deltaTime;
-                    m_player.mapY += (dy / dist) * speed * deltaTime;
+                    float nextX = m_player.mapX + (dx / dist) * speed * deltaTime;
+                    float nextY = m_player.mapY + (dy / dist) * speed * deltaTime;
+                    if (!IsCellBlocked(nextX, m_player.mapY)) m_player.mapX = nextX;
+                    if (!IsCellBlocked(m_player.mapX, nextY)) m_player.mapY = nextY;
                 }
             }
             else {
@@ -2197,10 +2434,21 @@ public:
             }
             else {
                 float speed = m_isRunning ? 7.0f : 3.0f;
-                m_player.mapX += (dx / dist) * speed * deltaTime;
-                m_player.mapY += (dy / dist) * speed * deltaTime;
+                float nextX = m_player.mapX + (dx / dist) * speed * deltaTime;
+                float nextY = m_player.mapY + (dy / dist) * speed * deltaTime;
+                bool movedX = false, movedY = false;
+                if (!IsCellBlocked(nextX, m_player.mapY)) { m_player.mapX = nextX; movedX = true; }
+                if (!IsCellBlocked(m_player.mapX, nextY)) { m_player.mapY = nextY; movedY = true; }
+                if (!movedX && !movedY) {
+                    m_player.isMoving = false; m_player.currentFrame = 0;
+                }
             }
         }
+
+        m_player.isInWater = IsCellWater(m_player.mapX, m_player.mapY);
+
+        UpdateMapMusic(deltaTime);
+        UpdateMapRegions(deltaTime);
 
         m_player.animTimer += deltaTime;
         float currentAnimSpeed = 10.0f;
@@ -2216,9 +2464,11 @@ public:
             if (m_player.isMoving) {
                 if (m_player.currentFrame % 14 == 0) {
                     PlayActionSound((uint32_t)m_player.modelType, 999, m_isRunning ? 120 : 110);
+                    if (m_player.isInWater) LoadEffect("WaterSplash", m_player.mapX, m_player.mapY);
                 }
                 else if (m_player.currentFrame % 14 == 7) {
                     PlayActionSound((uint32_t)m_player.modelType, 999, m_isRunning ? 121 : 111);
+                    if (m_player.isInWater) LoadEffect("WaterSplash", m_player.mapX, m_player.mapY);
                 }
             }
 
@@ -2505,10 +2755,7 @@ public:
 
                     int maxFrames = 0;
                     for (const auto& part : effect.parts) {
-                        if (part.model.isValid) {
-                            if (!part.model.motions.empty()) maxFrames = (std::max)(maxFrames, part.model.motions[0].frameCount);
-                            if (!part.model.ptcls.empty()) maxFrames = (std::max)(maxFrames, (int)part.model.ptcls[0].frames.size());
-                        }
+                        if (part.model.isValid) maxFrames = (std::max)(maxFrames, GetModelMaxFrame(part.model));
                     }
                     if (maxFrames <= 0) maxFrames = 30;
 
@@ -2605,6 +2852,7 @@ public:
                             mainBodyModel = &(*activeBodyParts)[0].attackModels[401];
                     }
                     else if (m_player.isJumping) mainBodyModel = &(*activeBodyParts)[0].jumpModel;
+                    else if (m_player.isInWater) mainBodyModel = &(*activeBodyParts)[0].swimModel;
                     else if (m_player.isMoving) mainBodyModel = m_isRunning ? &(*activeBodyParts)[0].runModel : &(*activeBodyParts)[0].walkModel;
                     else if (m_player.isAlert) mainBodyModel = &(*activeBodyParts)[0].alertModel;
                     else mainBodyModel = &(*activeBodyParts)[0].idleModel;
@@ -2620,6 +2868,7 @@ public:
                             activeModel = &part.attackModels[401];
                     }
                     else if (m_player.isJumping) activeModel = &part.jumpModel;
+                    else if (m_player.isInWater) activeModel = &part.swimModel;
                     else if (m_player.isMoving) activeModel = m_isRunning ? &part.runModel : &part.walkModel;
                     else if (m_player.isAlert) activeModel = &part.alertModel;
 
@@ -2637,6 +2886,7 @@ public:
                             activeHair = &m_hairAttackModels[401];
                     }
                     else if (m_player.isJumping) { activeHair = &m_hairJumpModel; }
+                    else if (m_player.isInWater) { activeHair = &m_hairSwimModel; }
                     else if (m_player.isMoving) { activeHair = m_isRunning ? &m_hairRunModel : &m_hairWalkModel; }
                     else if (m_player.isAlert) { activeHair = &m_hairAlertModel; }
 
@@ -2653,6 +2903,7 @@ public:
                                 activeModel = &part.attackModels[401];
                         }
                         else if (m_player.isJumping) activeModel = &part.jumpModel;
+                        else if (m_player.isInWater) activeModel = &part.swimModel;
                         else if (m_player.isMoving) activeModel = m_isRunning ? &part.runModel : &part.walkModel;
                         else if (m_player.isAlert) activeModel = &part.alertModel;
 
@@ -2859,10 +3110,7 @@ public:
 
             int globalMaxFrames = 0;
             for (const auto& part : effect.parts) {
-                if (part.model.isValid) {
-                    if (!part.model.motions.empty()) globalMaxFrames = (std::max)(globalMaxFrames, part.model.motions[0].frameCount);
-                    if (!part.model.ptcls.empty()) globalMaxFrames = (std::max)(globalMaxFrames, (int)part.model.ptcls[0].frames.size());
-                }
+                if (part.model.isValid) globalMaxFrames = (std::max)(globalMaxFrames, GetModelMaxFrame(part.model));
             }
             if (globalMaxFrames <= 0) globalMaxFrames = 30;
 
@@ -3004,6 +3252,13 @@ public:
                 SetSpriteUV(0.0f, 1.0f, 1.0f, 0.0f);
                 m_renderer.DrawSprite(m_heroTgaId, hx, hy, 16, 16);
                 SetSpriteUV(0.0f, 0.0f, 1.0f, 1.0f);
+            }
+
+            // [region.ini] Nome discreto da regiao/cidade atual, exibido em cima do minimap.
+            if (m_regionNameTexId != -1) {
+                int nameX = mapScreenX + (totalMiniMapW - m_regionNameW) / 2;
+                int nameY = mapScreenY + 4;
+                m_renderer.DrawSprite(m_regionNameTexId, nameX, nameY, m_regionNameW, m_regionNameH);
             }
         }
 
