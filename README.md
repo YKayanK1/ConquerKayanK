@@ -13,12 +13,14 @@ Conquer KayanK - Development Diary (Phase 1 Status) Overview: KayanK is a custom
 15. Number 0: You display the wings
 16. For the letter 'E', you add an effect; there is a list of effects in the code.](https://github.com/YKayanK1/ConquerKayanK)
 
-17.	![Texto Alternativo](x64/Debug/foto1.png)
-18.	![Texto Alternativo](x64/Debug/foto2.png)
-19.	![Texto Alternativo](x64/Debug/foto3.png)
-20.	![Texto Alternativo](x64/Debug/foto4.png)
-21.	![Texto Alternativo](x64/Debug/foto5.png)
-22.	![Texto Alternativo](x64/Debug/foto6.png)
-23.	![Texto Alternativo](x64/Debug/foto7.png)
+17.	![Texto Alternativo](x64/Debug/foto8.png)
+18.	![Texto Alternativo](x64/Debug/foto9.png)
+19.	![Texto Alternativo](x64/Debug/foto1.png)
+20.	![Texto Alternativo](x64/Debug/foto2.png)
+21.	![Texto Alternativo](x64/Debug/foto3.png)
+22.	![Texto Alternativo](x64/Debug/foto4.png)
+23.	![Texto Alternativo](x64/Debug/foto5.png)
+24.	![Texto Alternativo](x64/Debug/foto6.png)
+25.	![Texto Alternativo](x64/Debug/foto7.png)
 
 ](https://github.com/YKayanK1/ConquerKayanK)
