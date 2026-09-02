@@ -255,4 +255,63 @@ namespace Resource {
 		return result;
 	}
 
+	// ------------------------------------------------------------------
+	// ini\cq_generator.csv: geradores de monstros (server). Formato CSV com aspas.
+	// Colunas: id, mapid, bound_x, bound_y, bound_cx, bound_cy, maxnpc, rest_secs,
+	// max_per_gen, npctype, timer_begin, timer_end, born_x, born_y.
+	// ------------------------------------------------------------------
+	static std::vector<GeneratorEntry> ParseGeneratorCsvData(const std::vector<uint8_t>& data) {
+		std::vector<GeneratorEntry> generators;
+		if (data.empty()) return generators;
+
+		std::string content((char*)data.data(), data.size());
+		std::istringstream iss(content);
+		std::string line;
+
+		std::getline(iss, line); // cabecalho: descarta
+
+		auto splitCsv = [](const std::string& row) {
+			std::vector<std::string> fields;
+			std::string field;
+			bool inQuotes = false;
+			for (size_t i = 0; i < row.size(); i++) {
+				char c = row[i];
+				if (c == '"') { inQuotes = !inQuotes; continue; }
+				if (c == ',' && !inQuotes) { fields.push_back(field); field.clear(); continue; }
+				field += c;
+			}
+			fields.push_back(field);
+			return fields;
+			};
+
+		auto safeStoi = [](const std::string& s) -> int { try { return std::stoi(s); } catch (...) { return 0; } };
+		auto safeStou = [](const std::string& s) -> uint32_t { try { return (uint32_t)std::stoul(s); } catch (...) { return 0; } };
+
+		while (std::getline(iss, line)) {
+			if (!line.empty() && line.back() == '\r') line.pop_back();
+			if (line.empty()) continue;
+
+			auto fields = splitCsv(line);
+			if (fields.size() < 9) continue;
+
+			GeneratorEntry entry;
+			entry.id = safeStou(fields[0]);
+			entry.mapId = safeStou(fields[1]);
+			entry.boundX = safeStoi(fields[2]);
+			entry.boundY = safeStoi(fields[3]);
+			entry.boundCx = safeStoi(fields[4]);
+			entry.boundCy = safeStoi(fields[5]);
+			entry.maxNpc = safeStoi(fields[6]);
+			entry.restSecs = safeStoi(fields[7]);
+			entry.maxPerGen = safeStoi(fields[8]);
+			if (fields.size() > 9) entry.npcType = safeStou(fields[9]);
+			if (fields.size() > 12) entry.bornX = safeStoi(fields[12]);
+			if (fields.size() > 13) entry.bornY = safeStoi(fields[13]);
+
+			generators.push_back(entry);
+		}
+
+		return generators;
+	}
+
 }

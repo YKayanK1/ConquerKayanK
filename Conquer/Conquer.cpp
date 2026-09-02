@@ -219,6 +219,7 @@ class Application {
 public:
     std::string m_clientPath = "D:\\projetos\\kayank\\5017\\cliente";
     std::string m_currentEffectName = "Nenhum";
+    int m_splashTexId = -1; // [Tela de carregamento] data\main\LogoN.bmp exibida durante o Initialize()
 
     Engine::WindowManager m_window;
     Graphics::SceneRenderer m_renderer;
@@ -247,7 +248,11 @@ public:
 
     struct ExpandedMonsterEntity : public Game::MonsterEntity {
         uint32_t meshId;
+        uint32_t originGeneratorId = 0; // 0 = sem gerador (ex.: invocado manualmente pelo debug)
+        uint64_t uid = 0;               // identificador unico (usado para o efeito de nascimento seguir o monstro)
+        bool hasPlayedBornAction = false;
     };
+    uint64_t m_nextMonsterUid = 1;
     std::vector<ExpandedMonsterEntity> m_monsters;
     std::vector<Game::SceneObject> m_sceneObjects;
 
@@ -298,6 +303,11 @@ public:
 
         bool isFirstFrame = true;
         bool isScreenFixed = false; // ignora jumpZ e fica travado no centro da tela (ex: efeito de regiao/cidade)
+
+        // [Efeito preso ao monstro] Quando != 0, mapX/mapY sao recalculados a cada frame
+        // a partir da posicao atual do monstro dono (ex.: BornEffect do Monster.txt), entao
+        // se o monstro se mover o efeito acompanha.
+        uint64_t attachedMonsterUid = 0;
     };
     std::vector<ActiveEffect> m_activeEffects;
 
@@ -361,6 +371,11 @@ public:
         std::string name;
         uint32_t meshId;
         int maxLife;
+
+        // [ini\Monster.txt] Acao/efeito/som tocados uma unica vez ao nascer o monstro.
+        uint32_t bornAction = 100; // ex.: 315 (senao definido, fica em StandBy)
+        std::string bornEffect;    // nome do efeito em ini\3DEffect.ini (ex.: MBStandard)
+        std::string bornSound;     // geralmente "none"
     };
     std::vector<MonsterDef> m_monsterDB;
 
@@ -399,6 +414,12 @@ public:
         int asb = 5, adb = 6;
         bool isMonsterStyle = false; // usa GetMonsterRender (Look nao e boneco)
         uint32_t monsterMeshId = 0;
+
+        // [Hover Rest/Blaze] Apenas para NPCs simples (lookfaceBase < 1000), que tem as 3
+        // motions definidas em npc.ini. Mesmos meshes/texturas de partModels, mas com a
+        // motion de Rest/Blaze aplicada em vez da StandBy.
+        std::vector<Resource::C3Model> partModelsRest;
+        std::vector<Resource::C3Model> partModelsBlaze;
     };
     std::unordered_map<uint32_t, CachedNpcRender> m_npcRenderCache; // chave = lookfaceBase
 
@@ -408,6 +429,16 @@ public:
     std::unordered_map<uint32_t, Resource::NpcXConfig> m_npcXConfigs;
     std::vector<Game::NpcEntity> m_npcs;
 
+    // [Gerador de Monstros] ini\cq_generator.csv define areas de spawn por mapa.
+    // So fica ativo enquanto o boneco estiver no mapa correspondente (m_generators
+    // e filtrado por currentMapId ao entrar no mapa, igual NPCs/regioes).
+    struct ActiveGenerator : public Resource::GeneratorEntry {
+        int aliveCount = 0;      // quantos monstros vivos deste gerador existem agora em m_monsters
+        float restTimer = 0.0f;  // tempo decorrido desde a ultima reposicao (so conta quando abaixo do maxNpc)
+    };
+    std::vector<ActiveGenerator> m_generators;
+    std::vector<Resource::GeneratorEntry> m_generatorDbAll;
+
     std::unordered_map<int16_t, int> m_puzzleTextures;
     std::unordered_map<std::string, int> m_terrainTextureCache;
     Resource::DMapData m_currentDMap;
@@ -416,6 +447,19 @@ public:
     float m_cameraX = 0.0f, m_cameraY = 0.0f;
     float m_zoom = 1.0f;
     int m_mouseX = 0, m_mouseY = 0;
+
+    // [ROTACAO/INCLINACAO DO BONECO - AJUSTE AQUI] Pitch (inclinacao vertical) aplicado ao
+    // desenhar o modelo do jogador em DrawMesh3D (parametro "pitch", em radianos). O boneco
+    // olhando "para cima" e controlado por este valor: aumente para inclinar mais pra baixo,
+    // diminua (ou use negativo) para inclinar mais pra cima. Mude so este numero e recompile
+    // para testar - todos os DrawMesh3D do player usam essa constante.
+    float m_playerPitch = 0.0f; // <-- MUDE ESTE VALOR PARA TESTAR (ex: 0.1f, 0.15f, -0.1f...)
+
+    // [RANGE DE VISUALIZACAO - AJUSTE AQUI] Distancia maxima (em celulas do mapa, X+Y)
+    // a partir do boneco para renderizar monstros e NPCs. Evita desenhar/atualizar
+    // entidades muito longe (ex.: geradores com muitos bichos de uma vez), melhorando
+    // performance e poluicao visual. Mude so este numero para testar outros valores.
+    float m_entityViewRange = 30.0f; // <-- MUDE ESTE VALOR PARA TESTAR (ex: 15.0f, 30.0f...)
 
 
     // [Colisao/Agua] Acesso as celulas do mapa carregado.
@@ -483,7 +527,8 @@ public:
     // [Sons ambiente do mapa] ini\MusicRegion.ini define regioes retangulares (em tiles)
     // que possuem uma musica de "entrada" (TitleMusic) tocada uma vez ao entrar na regiao,
     // seguida por uma playlist de MusicN faixas que se alternam com DelayTime segundos de
-    // intervalo entre cada uma, em loop enquanto o player permanecer dentro da regiao.
+    // SILENCIO entre uma faixa e outra (nao interrompe a faixa atual antes do seu tempo
+    // MusicTimeN terminar), em loop enquanto o player permanecer dentro da regiao.
     void UpdateMapMusic(float deltaTime) {
         if (m_musicRegions.empty()) return;
 
@@ -523,37 +568,52 @@ public:
         const auto& region = m_musicRegions[m_activeMusicRegion];
         if (region.amount <= 0 || region.musics.empty()) return;
 
+        // Fase de silencio (DelayTime) entre uma faixa e a proxima: a faixa anterior ja
+        // tocou seu tempo (MusicTimeN) completo antes de chegarmos aqui, entao so aguarda
+        // o delay e so ENTAO inicia a proxima faixa (nao corta nada no meio).
         if (m_musicDelayPending) {
             m_musicDelayTimer -= deltaTime;
             if (m_musicDelayTimer <= 0.0f) {
                 m_musicDelayPending = false;
-                m_musicTrackTimer = 0.0f;
+
+                m_activeMusicIndex++;
+                if (m_activeMusicIndex >= (int)region.musics.size() || m_activeMusicIndex >= region.amount) {
+                    m_activeMusicIndex = 0;
+                }
+
+                const std::string& track = region.musics[m_activeMusicIndex];
+                int trackTime = (m_activeMusicIndex < (int)region.musicTimes.size()) ? region.musicTimes[m_activeMusicIndex] : 60;
+
+                if (!track.empty()) {
+                    m_audio.PlayMusic(m_clientPath + "\\" + track, false);
+                }
+                m_musicTrackTimer = (float)trackTime;
             }
-            else {
-                return;
-            }
+            return;
         }
 
+        // Faixa atual ainda tocando: respeita o tempo dela (MusicTimeN ou TitleMusicTime)
+        // integralmente antes de avancar ou entrar no delay.
         m_musicTrackTimer -= deltaTime;
         if (m_musicTrackTimer <= 0.0f) {
-            m_activeMusicIndex++;
-            if (m_activeMusicIndex >= (int)region.musics.size() || m_activeMusicIndex >= region.amount) {
-                m_activeMusicIndex = 0;
-            }
-
-            const std::string& track = region.musics[m_activeMusicIndex];
-            int trackTime = (m_activeMusicIndex < (int)region.musicTimes.size()) ? region.musicTimes[m_activeMusicIndex] : 60;
-
-            if (!track.empty()) {
-                m_audio.PlayMusic(m_clientPath + "\\" + track, false);
-            }
-
             if (region.delayTime > 0) {
+                // Entra em silencio por DelayTime segundos; a proxima faixa so comeca
+                // quando esse tempo expirar (ver bloco m_musicDelayPending acima).
                 m_musicDelayPending = true;
                 m_musicDelayTimer = (float)region.delayTime;
-                m_musicTrackTimer = (float)trackTime; // usado apos o delay expirar (reavaliado no proximo ciclo)
             }
             else {
+                m_activeMusicIndex++;
+                if (m_activeMusicIndex >= (int)region.musics.size() || m_activeMusicIndex >= region.amount) {
+                    m_activeMusicIndex = 0;
+                }
+
+                const std::string& track = region.musics[m_activeMusicIndex];
+                int trackTime = (m_activeMusicIndex < (int)region.musicTimes.size()) ? region.musicTimes[m_activeMusicIndex] : 60;
+
+                if (!track.empty()) {
+                    m_audio.PlayMusic(m_clientPath + "\\" + track, false);
+                }
                 m_musicTrackTimer = (float)trackTime;
             }
         }
@@ -800,6 +860,45 @@ public:
                 m_monsterDB.push_back(def);
             }
         }
+
+        // [ini\Monster.txt] Le BornAction/BornEffect/BornSound por secao ([NomeDoMonstro])
+        // e mescla no MonsterDef correspondente (mesmo "name" usado em dbmonster.txt).
+        auto monsterTxtData = m_resource.GetFileData("ini\\Monster.txt");
+        if (!monsterTxtData.empty()) {
+            std::string mContent((char*)monsterTxtData.data(), monsterTxtData.size());
+            std::istringstream miss(mContent);
+            std::string mline;
+
+            std::unordered_map<std::string, MonsterDef*> byName;
+            for (auto& def : m_monsterDB) byName[def.name] = &def;
+
+            MonsterDef* current = nullptr;
+            auto safeStou = [](const std::string& s) -> uint32_t { try { return (uint32_t)std::stoul(s); } catch (...) { return 100; } };
+
+            while (std::getline(miss, mline)) {
+                if (!mline.empty() && mline.back() == '\r') mline.pop_back();
+                if (mline.empty()) continue;
+
+                if (mline.front() == '[' && mline.back() == ']') {
+                    std::string secName = mline.substr(1, mline.size() - 2);
+                    auto found = byName.find(secName);
+                    current = (found != byName.end()) ? found->second : nullptr;
+                    continue;
+                }
+
+                if (!current) continue;
+
+                size_t eqPos = mline.find('=');
+                if (eqPos == std::string::npos) continue;
+                std::string key = mline.substr(0, eqPos);
+                std::string val = mline.substr(eqPos + 1);
+                while (!val.empty() && (val.back() == ' ' || val.back() == '\t')) val.pop_back();
+
+                if (key == "BornAction") current->bornAction = safeStou(val);
+                else if (key == "BornEffect") current->bornEffect = val;
+                else if (key == "BornSound") current->bornSound = val;
+            }
+        }
     }
 
     void LoadItemTypes(const std::string& path) {
@@ -903,6 +1002,42 @@ public:
 
         if (!m_resource.Initialize(m_clientPath)) return false;
 
+        // [Tela de carregamento] Sorteia data\main\LogoN.bmp (N=1..5, na ordem sorteada,
+        // pulando os que nao existem) e exibe centralizado 500x375 enquanto o restante dos
+        // recursos (mapas, npcs, monstros, efeitos, etc.) e carregado logo abaixo. A tela
+        // fecha sozinha (DeleteTexture) assim que o carregamento termina, antes do jogo abrir.
+        {
+            srand((unsigned int)time(NULL));
+            std::vector<int> candidates = { 1, 2, 3, 4, 5 };
+            for (size_t i = candidates.size() - 1; i > 0; i--) {
+                size_t j = rand() % (i + 1);
+                std::swap(candidates[i], candidates[j]);
+            }
+
+            for (int n : candidates) {
+                char logoPath[64];
+                sprintf_s(logoPath, "data\\main\\Logo%d.bmp", n);
+                auto logoData = m_resource.GetFileData(logoPath);
+                if (!logoData.empty()) {
+                    m_splashTexId = m_renderer.LoadTextureFromMemory(logoData.data(), logoData.size());
+                    if (m_splashTexId != -1) break;
+                }
+            }
+
+            if (m_splashTexId != -1) {
+                MSG splashMsg = {};
+                while (PeekMessage(&splashMsg, nullptr, 0, 0, PM_REMOVE)) {
+                    TranslateMessage(&splashMsg); DispatchMessage(&splashMsg);
+                }
+
+                int splashX = (m_window.m_width - 500) / 2;
+                int splashY = (m_window.m_height - 375) / 2;
+                m_renderer.BeginFrame();
+                m_renderer.DrawSprite(m_splashTexId, splashX, splashY, 500, 375);
+                m_renderer.EndFrame();
+            }
+        }
+
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -939,6 +1074,7 @@ public:
         m_simpleObjConfigs = m_resource.ParseSimpleObjIni("ini\\3DSimpleObj.ini");
         m_npcXConfigs = m_resource.ParseNpcXIni("ini\\NpcX.ini");
         m_npcDbAll = m_resource.ParseNpcCsv("ini\\cq_npc.csv");
+        m_generatorDbAll = m_resource.ParseGeneratorCsv("ini\\cq_generator.csv");
 
         LoadItemTypes("ini\\itemtype.txt");
         LoadMonsterDB();
@@ -1002,9 +1138,9 @@ public:
         m_currentGarmentId = 0;
 
         ChangeWeapon(0, 0);
-        ChangeArmor(Game::ModelType::SmallFemale, m_player.armorId);
-        ChangeArmet(Game::ModelType::SmallFemale, m_currentArmetId);
-        ChangeGarment(Game::ModelType::SmallFemale, m_currentGarmentId);
+        ChangeArmor(Game::ModelType::SmallMale, m_player.armorId);
+        ChangeArmet(Game::ModelType::SmallMale, m_currentArmetId);
+        ChangeGarment(Game::ModelType::SmallMale, m_currentGarmentId);
 
         auto gameMaps = m_resource.LoadGameMapDat("ini\\GameMap.dat");
         const int currentMapId = 1002; // TwinCity: possui arvores, agua e elevacao de terreno (escadas)
@@ -1066,6 +1202,21 @@ public:
 
             m_npcs.push_back(npc);
         }
+
+        // [Gerador de Monstros] So ativa geradores do mapa atual: ao trocar de mapa os
+        // spawns do mapa anterior param (m_generators e limpo) e os monstros ja existentes
+        // sao removidos, pois cada gerador so deve existir enquanto o boneco estiver no mapa dele.
+        m_generators.clear();
+        for (auto& genDef : m_generatorDbAll) {
+            if (genDef.mapId != (uint32_t)currentMapId) continue;
+            ActiveGenerator gen;
+            static_cast<Resource::GeneratorEntry&>(gen) = genDef;
+            m_generators.push_back(gen);
+        }
+        for (auto& mob : m_monsters) {
+            if (mob.nameTexId != -1) m_renderer.DeleteTexture(mob.nameTexId);
+        }
+        m_monsters.clear();
 
         if (gameMaps.count(currentMapId)) {
             m_currentDMap = m_resource.LoadDMap(gameMaps[currentMapId].dmapPath);
@@ -1140,6 +1291,66 @@ public:
                     }
                 }
 
+                // [MAP_SCENE / pontes] Cada entrada de m_currentDMap.sceneObjects aponta (por
+                // caminho) para um arquivo de cena separado (ex.: ponte) que contem varias
+                // "partes" (sprites animados) posicionadas em celulas relativas a posicao da
+                // cena. Carregamos esse arquivo e expandimos cada parte como um SceneObject
+                // normal, reaproveitando o mesmo pipeline de renderizacao dos terrainObjects.
+                std::cout << "[SceneObj] mapa tem " << m_currentDMap.sceneObjects.size() << " sceneObjects (pontes/etc.)\n";
+                for (const auto& sceneObj : m_currentDMap.sceneObjects) {
+                    Resource::SceneFileData sceneFile = m_resource.LoadScene(sceneObj.scenePath);
+                    std::cout << "[SceneObj] scenePath='" << sceneObj.scenePath << "' pos=(" << sceneObj.mapX << "," << sceneObj.mapY
+                        << ") isValid=" << (sceneFile.isValid ? 1 : 0) << " parts=" << sceneFile.parts.size() << "\n";
+                    if (!sceneFile.isValid) continue;
+
+                    for (const auto& part : sceneFile.parts) {
+                        std::string key = part.aniPath + "|" + part.aniName;
+                        auto cachedTex = m_terrainTextureCache.find(key);
+
+                        int textureId = -1;
+                        int pixelW = 0, pixelH = 0;
+                        if (cachedTex != m_terrainTextureCache.end()) {
+                            textureId = cachedTex->second;
+                            auto sizeIt = terrainSizeCache.find(key);
+                            if (sizeIt != terrainSizeCache.end()) { pixelW = sizeIt->second.first; pixelH = sizeIt->second.second; }
+                        }
+                        else {
+                            std::string ddsPath = m_resource.ParseAniSection(part.aniPath, part.aniName);
+                            if (!ddsPath.empty()) {
+                                auto partTexData = m_resource.GetFileData(ddsPath);
+                                if (!partTexData.empty()) {
+                                    textureId = m_renderer.LoadTextureFromMemory(partTexData.data(), partTexData.size());
+                                    Resource::ReadImagePixelSize(partTexData, pixelW, pixelH);
+                                    m_terrainTextureCache[key] = textureId;
+                                    terrainSizeCache[key] = { pixelW, pixelH };
+                                }
+                                else {
+                                    std::cout << "[SceneObj] FALHA ao ler dados do arquivo ddsPath='" << ddsPath
+                                        << "' (aniPath='" << part.aniPath << "' aniName='" << part.aniName << "')\n";
+                                }
+                            }
+                            else {
+                                std::cout << "[SceneObj] FALHA ao resolver ddsPath a partir de aniPath='" << part.aniPath
+                                    << "' aniName='" << part.aniName << "'\n";
+                            }
+                        }
+
+                        if (textureId != -1) {
+                            Game::SceneObject obj;
+                            obj.textureId = textureId;
+                            obj.width = pixelW; obj.height = pixelH;
+                            obj.mapX = (float)(sceneObj.mapX + part.locationX);
+                            obj.mapY = (float)(sceneObj.mapY + part.locationY);
+                            // [Fix] O pipeline de desenho compartilhado (node.type==2) SUBTRAI obj.offsetX/Y da posicao
+                            // de tela (correto para terrainObjects, conforme TerrainObjectDrawingComponent da referencia).
+                            // Porem partes de cena/ponte (SceneDrawingComponent da referencia) SOMAM o ImageOffset em vez
+                            // de subtrair. Negamos aqui para reaproveitar o mesmo pipeline com o sinal correto.
+                            obj.offsetX = -part.imageOffsetX; obj.offsetY = -part.imageOffsetY;
+                            m_sceneObjects.push_back(obj);
+                        }
+                    }
+                }
+
                 // [Portais] Cada entrada de m_currentDMap.portals marca uma celula de teletransporte
                 // (.dmap). O efeito visual "exit" (3DEffect.ini) e disparado fixo na posicao do
                 // mundo de cada portal e ja possui LoopTime muito alto (praticamente continuo).
@@ -1148,6 +1359,14 @@ public:
                 }
             }
         }
+
+        // [Tela de carregamento] Tudo carregado (mapa, npcs, geradores, efeitos, etc.):
+        // fecha a splash antes de abrir a tela normal do jogo.
+        if (m_splashTexId != -1) {
+            m_renderer.DeleteTexture(m_splashTexId);
+            m_splashTexId = -1;
+        }
+
         return true;
     }
 
@@ -1311,13 +1530,28 @@ public:
                         }
 
                         // Animacao StandBy do NPC (o modelo fica parado exibindo essa motion).
+                        Resource::C3Model standModel = model;
                         if (m_motionPaths.count(typeCfg.standByMotion)) {
                             Resource::C3Model animModel = m_resource.LoadC3Model(m_motionPaths[typeCfg.standByMotion]);
-                            ApplyAnim(model, animModel);
+                            ApplyAnim(standModel, animModel);
                         }
-
-                        render.partModels.push_back(model);
+                        render.partModels.push_back(standModel);
                         render.partTextureIds.push_back(texId);
+
+                        // [Hover] Rest (toca uma vez) e Blaze (loop) para quando o mouse passar por cima.
+                        Resource::C3Model restModel = model;
+                        if (m_motionPaths.count(typeCfg.restMotion)) {
+                            Resource::C3Model animModel = m_resource.LoadC3Model(m_motionPaths[typeCfg.restMotion]);
+                            ApplyAnim(restModel, animModel);
+                        }
+                        render.partModelsRest.push_back(restModel);
+
+                        Resource::C3Model blazeModel = model;
+                        if (m_motionPaths.count(typeCfg.blazeMotion)) {
+                            Resource::C3Model animModel = m_resource.LoadC3Model(m_motionPaths[typeCfg.blazeMotion]);
+                            ApplyAnim(blazeModel, animModel);
+                        }
+                        render.partModelsBlaze.push_back(blazeModel);
                     }
                 }
             }
@@ -2152,25 +2386,39 @@ public:
 
                 if (ImGui::Button("Invocar Monstro (Summon)", ImVec2(-1.0f, 40.0f))) {
                     ExpandedMonsterEntity newMob;
+                    newMob.uid = m_nextMonsterUid++;
 
                     newMob.mapX = m_player.mapX + (float)((rand() % 5) - 2);
                     newMob.mapY = m_player.mapY + (float)((rand() % 5) - 2);
                     newMob.startX = newMob.mapX;
                     newMob.startY = newMob.mapY;
 
-                    newMob.meshId = m_monsterDB[monster_idx].meshId;
-                    newMob.maxHp = m_monsterDB[monster_idx].maxLife;
+                    const auto& mDef = m_monsterDB[monster_idx];
+                    newMob.meshId = mDef.meshId;
+                    newMob.maxHp = mDef.maxLife;
                     newMob.hp = newMob.maxHp;
                     newMob.visualHp = (float)newMob.maxHp;
-                    newMob.currentAction = 100;
+                    newMob.currentAction = (int)mDef.bornAction;
+                    newMob.hasPlayedBornAction = false;
 
-                    std::wstring wideName(m_monsterDB[monster_idx].name.begin(), m_monsterDB[monster_idx].name.end());
+                    std::wstring wideName(mDef.name.begin(), mDef.name.end());
                     auto texData = Game::GenerateTextTexture(m_renderer, wideName, RGB(255, 255, 255));
                     newMob.nameTexId = std::get<0>(texData);
                     newMob.nameW = std::get<1>(texData);
                     newMob.nameH = std::get<2>(texData);
 
                     m_monsters.push_back(newMob);
+
+                    if (!mDef.bornEffect.empty() && mDef.bornEffect != "none" && mDef.bornEffect != "None") {
+                        size_t beforeCount = m_activeEffects.size();
+                        LoadEffect(mDef.bornEffect, newMob.mapX, newMob.mapY);
+                        if (m_activeEffects.size() > beforeCount) {
+                            m_activeEffects.back().attachedMonsterUid = newMob.uid;
+                        }
+                    }
+                    if (!mDef.bornSound.empty() && mDef.bornSound != "none" && mDef.bornSound != "None") {
+                        m_audio.PlaySoundEffect(m_clientPath + "\\" + mDef.bornSound);
+                    }
                 }
             }
             else {
@@ -2430,6 +2678,51 @@ public:
 
                 auto [targetX, targetY] = coordSystem.ScreenToMap(unzoomedMouseX, unzoomedMouseY, m_cameraX, m_cameraY);
 
+                // [Hover/Clique NPC] Detecta se o mouse ENTROU sobre um NPC (edge trigger), para disparar
+                // a animacao Rest->Blaze uma unica vez. A animacao roda ate o fim mesmo que o mouse
+                // saia do NPC antes de terminar; ela nao fica "presa" ao hover continuo.
+                // O mesmo hit-test (caixa de tela do NPC, cobrindo a altura do modelo) tambem serve
+                // para impedir que um clique "em cima" do NPC seja tratado como andar para tras dele:
+                // so conta como clique de interacao (virar o NPC) se cair dentro dessa caixa; cliques
+                // fora dela (mesmo que logo atras do NPC) continuam sendo andar normalmente.
+                int clickedNpcIdx = -1;
+                for (size_t ni = 0; ni < m_npcs.size(); ni++) {
+                    auto& npc = m_npcs[ni];
+                    auto [nWorldX, nWorldY] = coordSystem.MapToScreen(npc.mapX, npc.mapY);
+                    float drawX = nWorldX - m_cameraX;
+                    float drawY = nWorldY - m_cameraY;
+                    float zX = cx + (drawX - cx) * m_zoom;
+                    float zY = cy + (drawY - cy) * m_zoom;
+
+                    float npcW = 80.0f * m_zoom;
+                    float npcH = 130.0f * m_zoom;
+                    float npcLeft = zX - (npcW / 2.0f);
+                    float npcRight = zX + (npcW / 2.0f);
+                    float npcTop = zY - npcH;
+                    float npcBottom = zY + (20.0f * m_zoom);
+
+                    bool nowHovered = (pt.x >= npcLeft && pt.x <= npcRight && pt.y >= npcTop && pt.y <= npcBottom);
+                    if (nowHovered && !npc.isHovered && npc.animState == 0) {
+                        // Comecou o hover (e o NPC estava parado): toca RestMotion uma vez,
+                        // depois BlazeMotion uma vez, e so entao volta a StandByMotion sozinho.
+                        npc.animState = 1;
+                        npc.currentFrame = 0;
+                        npc.animTimer = 0.0f;
+                    }
+                    npc.isHovered = nowHovered;
+
+                    if (nowHovered) clickedNpcIdx = (int)ni;
+
+                    // [Clique no NPC] Gira o NPC para encarar o jogador.
+                    if (leftClicked && nowHovered) {
+                        float ndx = m_player.mapX - npc.mapX;
+                        float ndy = m_player.mapY - npc.mapY;
+                        if (std::sqrt(ndx * ndx + ndy * ndy) > 0.05f) {
+                            npc.facingAngle = -(std::atan2(ndy, ndx) - 0.78539f);
+                        }
+                    }
+                }
+
                 if (leftClicked && clickedMonsterIdx != -1) {
                     m_player.targetMonsterIndex = clickedMonsterIdx;
                     m_player.isMoving = false;
@@ -2439,7 +2732,7 @@ public:
                     m_player.isAlert = false;
                     m_player.alertTimer = 0.0f;
                 }
-                else if (currentLeftDown && clickedMonsterIdx == -1) {
+                else if (leftClicked && clickedMonsterIdx == -1 && clickedNpcIdx == -1) {
                     m_player.targetMonsterIndex = -1;
                     m_player.isAttacking = false;
                     m_player.isChasing = false;
@@ -2448,8 +2741,16 @@ public:
                     float dy = targetY - m_player.mapY;
                     float dist = std::sqrt(dx * dx + dy * dy);
 
-                    if (!m_player.isJumping) {
-                        if (dist > 0.05f) m_player.facingAngle = -(std::atan2(dy, dx) - 0.78539f);
+                    bool isShiftDown = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+
+                    if (isShiftDown) {
+                        // [Shift+clique] Apenas vira o boneco na direcao do clique, sem andar nem pular.
+                        if (!m_player.isJumping && dist > 0.05f) {
+                            m_player.facingAngle = -(std::atan2(dy, dx) - 0.70539f);
+                        }
+                    }
+                    else if (!m_player.isJumping) {
+                        if (dist > 0.05f) m_player.facingAngle = -(std::atan2(dy, dx) - 0.70539f);
 
                         if (GetAsyncKeyState(VK_CONTROL) & 0x8000) {
                             if (!IsCellBlocked(targetX, targetY)) {
@@ -2477,7 +2778,7 @@ public:
                             }
                         }
                     }
-                    else if (leftClicked) {
+                    else {
                         m_player.hasQueuedAction = true;
                         m_player.queuedTargetX = targetX;
                         m_player.queuedTargetY = targetY;
@@ -2828,12 +3129,19 @@ public:
             if (m_weaponEffectFrame >= 30) m_weaponEffectFrame = 0;
         }
 
-        // [Animacao StandBy dos NPCs] Avanca o frame da motion parada (StandByMotion) para
-        // cada NPC visivel no mapa atual, em loop, igual e feito com monstros/player.
+        // [Animacao dos NPCs] Avanca o frame da motion ativa (StandBy/Rest/Blaze) para cada
+        // NPC visivel no mapa atual, em loop, igual e feito com monstros/player. animState
+        // controla qual motion esta tocando: 0=StandBy (loop), 1=Rest (uma vez ao passar o
+        // mouse), 2=Blaze (loop enquanto o hover permanece ativo).
         for (auto& npc : m_npcs) {
             npc.animTimer += deltaTime;
-            if (npc.animTimer >= (1.0f / 8.0f)) {
-                npc.animTimer -= (1.0f / 8.0f);
+
+            // StandBy toca devagar (idle); Rest/Blaze (disparados pelo hover) tocam na
+            // velocidade normal de animacao (mesma taxa usada por monstros/player em acoes).
+            float npcAnimSpeed = (npc.animState == 0) ? 8.0f : 16.0f;
+
+            if (npc.animTimer >= (1.0f / npcAnimSpeed)) {
+                npc.animTimer -= (1.0f / npcAnimSpeed);
                 npc.currentFrame++;
 
                 auto& render = GetNpcRender((uint32_t)npc.cacheIndex);
@@ -2844,15 +3152,140 @@ public:
                         maxFrames = monsterRender.model.motions[0].frameCount;
                     }
                 }
-                else if (!render.partModels.empty() && render.partModels[0].isValid && !render.partModels[0].motions.empty()) {
-                    maxFrames = render.partModels[0].motions[0].frameCount;
+                else {
+                    const std::vector<Resource::C3Model>* activeParts = &render.partModels;
+                    if (npc.animState == 1) activeParts = &render.partModelsRest;
+                    else if (npc.animState == 2) activeParts = &render.partModelsBlaze;
+
+                    if (!activeParts->empty() && (*activeParts)[0].isValid && !(*activeParts)[0].motions.empty()) {
+                        maxFrames = (*activeParts)[0].motions[0].frameCount;
+                    }
                 }
                 if (maxFrames <= 0) maxFrames = 1;
-                if (npc.currentFrame >= maxFrames) npc.currentFrame = 0;
+
+                if (npc.currentFrame >= maxFrames) {
+                    npc.currentFrame = 0;
+                    if (npc.animState == 1) {
+                        // RestMotion terminou (toca uma vez) -> passa para BlazeMotion (tambem uma vez).
+                        npc.animState = 2;
+                    }
+                    else if (npc.animState == 2) {
+                        // BlazeMotion terminou (toca uma vez) -> volta ao StandByMotion (idle normal).
+                        npc.animState = 0;
+                    }
+                }
             }
         }
 
         std::vector<Game::MonsterEntity> spawnedMonsters;
+
+        // [Gerador de Monstros] Recalcula quantos monstros vivos existem por gerador e,
+        // se houver espaco (aliveCount < maxNpc), aguarda rest_secs e entao nasce ate
+        // max_per_gen por ciclo dentro da area (bound_x,bound_y,bound_cx,bound_cy) ou no
+        // ponto fixo (born_x,born_y) quando definido. So roda enquanto o mapa atual tiver
+        // geradores carregados (m_generators e filtrado pelo mapa em que o boneco esta).
+        if (!m_generators.empty()) {
+            for (auto& gen : m_generators) gen.aliveCount = 0;
+            for (auto& mob : m_monsters) {
+                if (mob.isDead || mob.originGeneratorId == 0) continue;
+                for (auto& gen : m_generators) {
+                    if (gen.id == mob.originGeneratorId) { gen.aliveCount++; break; }
+                }
+            }
+
+            for (auto& gen : m_generators) {
+                if (gen.maxNpc <= 0 || gen.aliveCount >= gen.maxNpc) {
+                    gen.restTimer = 0.0f;
+                    continue;
+                }
+
+                // [Range de visualizacao] So nasce monstro se o boneco estiver perto da area
+                // do gerador (dentro de m_entityViewRange), evitando travamentos por spawns
+                // em massa em geradores longe da tela. O timer de descanso so comeca a contar
+                // quando o boneco entra no alcance.
+                {
+                    float nearestX = (std::max)((float)gen.boundX, (std::min)(m_player.mapX, (float)(gen.boundX + gen.boundCx)));
+                    float nearestY = (std::max)((float)gen.boundY, (std::min)(m_player.mapY, (float)(gen.boundY + gen.boundCy)));
+                    float gdx = m_player.mapX - nearestX;
+                    float gdy = m_player.mapY - nearestY;
+                    if (std::sqrt(gdx * gdx + gdy * gdy) > m_entityViewRange) {
+                        gen.restTimer = 0.0f;
+                        continue;
+                    }
+                }
+
+                gen.restTimer += deltaTime;
+                if (gen.restTimer < (float)gen.restSecs) continue;
+                gen.restTimer = 0.0f;
+
+                int slotsFree = gen.maxNpc - gen.aliveCount;
+                int toSpawn = (std::min)(slotsFree, gen.maxPerGen > 0 ? gen.maxPerGen : 1);
+
+                uint32_t meshId = 0;
+                std::string mobName = "Monster";
+                int maxHp = 1000;
+                const MonsterDef* mDefPtr = nullptr;
+                for (const auto& mDef : m_monsterDB) {
+                    if (mDef.id == gen.npcType) {
+                        meshId = mDef.meshId;
+                        mobName = mDef.name;
+                        maxHp = mDef.maxLife;
+                        mDefPtr = &mDef;
+                        break;
+                    }
+                }
+                if (meshId == 0) continue; // npctype nao encontrado em dbmonster.txt
+
+                for (int s = 0; s < toSpawn; s++) {
+                    ExpandedMonsterEntity newMob;
+                    newMob.originGeneratorId = gen.id;
+                    newMob.meshId = meshId;
+                    newMob.uid = m_nextMonsterUid++;
+
+                    if (gen.bornX != 0 || gen.bornY != 0) {
+                        newMob.mapX = (float)gen.bornX + 0.5f;
+                        newMob.mapY = (float)gen.bornY + 0.5f;
+                    }
+                    else {
+                        int rx = (gen.boundCx > 0) ? (rand() % gen.boundCx) : 0;
+                        int ry = (gen.boundCy > 0) ? (rand() % gen.boundCy) : 0;
+                        newMob.mapX = (float)(gen.boundX + rx) + 0.5f;
+                        newMob.mapY = (float)(gen.boundY + ry) + 0.5f;
+                    }
+                    newMob.startX = newMob.mapX;
+                    newMob.startY = newMob.mapY;
+
+                    newMob.maxHp = (maxHp > 0) ? maxHp : 1000;
+                    newMob.hp = newMob.maxHp;
+                    newMob.visualHp = (float)newMob.maxHp;
+
+                    // [BornAction/BornEffect/BornSound - ini\Monster.txt] Toca uma vez ao nascer
+                    // (ex.: 315), depois o Draw3D detecta o fim da animacao e volta para StandBy (100).
+                    newMob.currentAction = mDefPtr ? (int)mDefPtr->bornAction : 100;
+                    newMob.hasPlayedBornAction = false;
+
+                    std::wstring wName(mobName.begin(), mobName.end());
+                    auto texData = Game::GenerateTextTexture(m_renderer, wName, RGB(255, 255, 255));
+                    newMob.nameTexId = std::get<0>(texData);
+                    newMob.nameW = std::get<1>(texData);
+                    newMob.nameH = std::get<2>(texData);
+
+                    m_monsters.push_back(newMob);
+                    gen.aliveCount++;
+
+                    if (mDefPtr && !mDefPtr->bornEffect.empty() && mDefPtr->bornEffect != "none" && mDefPtr->bornEffect != "None") {
+                        size_t beforeCount = m_activeEffects.size();
+                        LoadEffect(mDefPtr->bornEffect, newMob.mapX, newMob.mapY);
+                        if (m_activeEffects.size() > beforeCount) {
+                            m_activeEffects.back().attachedMonsterUid = newMob.uid;
+                        }
+                    }
+                    if (mDefPtr && !mDefPtr->bornSound.empty() && mDefPtr->bornSound != "none" && mDefPtr->bornSound != "None") {
+                        m_audio.PlaySoundEffect(m_clientPath + "\\" + mDefPtr->bornSound);
+                    }
+                }
+            }
+        }
 
         for (auto it = m_monsters.begin(); it != m_monsters.end(); ) {
             auto& monster = *it;
@@ -2887,6 +3320,8 @@ public:
                         monster.alpha = 0.0f;
 
                         ExpandedMonsterEntity faisao;
+                        faisao.originGeneratorId = monster.originGeneratorId;
+                        faisao.uid = m_nextMonsterUid++;
                         faisao.mapX = m_player.mapX + (float)((rand() % 12) - 6);
                         faisao.mapY = m_player.mapY + (float)((rand() % 12) - 6);
                         faisao.startX = faisao.mapX;
@@ -2894,17 +3329,20 @@ public:
                         faisao.meshId = monster.meshId;
 
                         std::string mobName = "Monster";
+                        const MonsterDef* mDefPtr = nullptr;
                         for (const auto& mDef : m_monsterDB) {
                             if (mDef.meshId == monster.meshId) {
                                 mobName = mDef.name;
                                 faisao.maxHp = mDef.maxLife;
+                                mDefPtr = &mDef;
                                 break;
                             }
                         }
                         if (faisao.maxHp <= 0) faisao.maxHp = 1000;
                         faisao.hp = faisao.maxHp;
                         faisao.visualHp = (float)faisao.maxHp;
-                        faisao.currentAction = 100;
+                        faisao.currentAction = mDefPtr ? (int)mDefPtr->bornAction : 100;
+                        faisao.hasPlayedBornAction = false;
 
                         std::wstring wName(mobName.begin(), mobName.end());
                         auto texData = Game::GenerateTextTexture(m_renderer, wName, RGB(255, 255, 255));
@@ -2914,6 +3352,17 @@ public:
 
                         spawnedMonsters.push_back(faisao);
                         it = m_monsters.erase(it);
+
+                        if (mDefPtr && !mDefPtr->bornEffect.empty() && mDefPtr->bornEffect != "none" && mDefPtr->bornEffect != "None") {
+                            size_t beforeCount = m_activeEffects.size();
+                            LoadEffect(mDefPtr->bornEffect, faisao.mapX, faisao.mapY);
+                            if (m_activeEffects.size() > beforeCount) {
+                                m_activeEffects.back().attachedMonsterUid = faisao.uid;
+                            }
+                        }
+                        if (mDefPtr && !mDefPtr->bornSound.empty() && mDefPtr->bornSound != "none" && mDefPtr->bornSound != "None") {
+                            m_audio.PlaySoundEffect(m_clientPath + "\\" + mDefPtr->bornSound);
+                        }
                         continue;
                     }
 
@@ -2941,48 +3390,42 @@ public:
                 monster.visualHp = monster.hp;
             }
 
-            if (monster.isMoving) {
-                float dx = monster.targetX - monster.mapX;
-                float dy = monster.targetY - monster.mapY;
-                float dist = std::sqrt(dx * dx + dy * dy);
-
-                if (dist < 0.1f) {
-                    monster.mapX = monster.targetX;
-                    monster.mapY = monster.targetY;
-                    monster.isMoving = false;
-                    monster.currentAction = 100;
-                    monster.currentFrame = 0;
-                    monster.waitTimer = 0.0f;
-                    monster.timeToWait = 1.0f + (rand() % 4);
-                }
-                else {
-                    monster.facingAngle = -(std::atan2(dy, dx) - 0.78539f);
-                    float speed = 2.0f;
-                    monster.mapX += (dx / dist) * speed * deltaTime;
-                    monster.mapY += (dy / dist) * speed * deltaTime;
-                }
-
+            // [Monstros parados] Nao vagam pelo mapa; ficam parados na posicao de
+            // nascimento. So a animacao de nascimento (BornAction) toca uma vez e depois
+            // volta para StandBy (100), que fica em loop.
+            if (!monster.hasPlayedBornAction) {
                 monster.animTimer += deltaTime;
                 if (monster.animTimer >= (1.0f / 15.0f)) {
                     monster.currentFrame++;
                     monster.animTimer -= (1.0f / 15.0f);
+
+                    auto& render = GetMonsterRender(monster.meshId, monster.currentAction);
+                    int maxFrames = 1;
+                    if (render.model.isValid && !render.model.motions.empty()) {
+                        maxFrames = render.model.motions[0].frameCount;
+                    }
+                    if (maxFrames <= 0) maxFrames = 1;
+
+                    if (monster.currentFrame >= maxFrames) {
+                        monster.currentFrame = 0;
+                        monster.hasPlayedBornAction = true;
+                        monster.currentAction = 100; // StandBy
+                    }
                 }
             }
             else {
-                monster.waitTimer += deltaTime;
-                if (monster.waitTimer >= monster.timeToWait) {
-                    float offsetX = (float)((rand() % 9) - 4);
-                    float offsetY = (float)((rand() % 9) - 4);
-                    monster.targetX = monster.startX + offsetX;
-                    monster.targetY = monster.startY + offsetY;
-                    monster.isMoving = true;
-                    monster.currentAction = 120;
-                    monster.currentFrame = 0;
-                }
                 monster.animTimer += deltaTime;
                 if (monster.animTimer >= (1.0f / 8.0f)) {
                     monster.currentFrame++;
                     monster.animTimer -= (1.0f / 8.0f);
+
+                    auto& render = GetMonsterRender(monster.meshId, monster.currentAction);
+                    int maxFrames = 1;
+                    if (render.model.isValid && !render.model.motions.empty()) {
+                        maxFrames = render.model.motions[0].frameCount;
+                    }
+                    if (maxFrames <= 0) maxFrames = 1;
+                    if (monster.currentFrame >= maxFrames) monster.currentFrame = 0;
                 }
             }
             ++it;
@@ -2998,6 +3441,24 @@ public:
             }
 
             float dtMs = deltaTime * 1000.0f;
+
+            // [Efeito preso ao monstro - BornEffect] Recalcula mapX/mapY a partir da
+            // posicao atual do monstro dono a cada frame, entao se ele se mover o efeito
+            // acompanha (removido automaticamente se o monstro nao existir mais).
+            if (effect.attachedMonsterUid != 0) {
+                bool ownerFound = false;
+                for (auto& mob : m_monsters) {
+                    if (mob.uid == effect.attachedMonsterUid) {
+                        effect.mapX = mob.mapX;
+                        effect.mapY = mob.mapY;
+                        ownerFound = true;
+                        break;
+                    }
+                }
+                if (!ownerFound) {
+                    effect.isFinished = true;
+                }
+            }
 
             if (effect.isDamageNumber) {
                 effect.currentLife += deltaTime;
@@ -3105,9 +3566,22 @@ public:
         struct RenderNode { float depth; int type; int index; };
         std::vector<RenderNode> renderQueue;
         renderQueue.push_back({ m_player.mapX + m_player.mapY, 0, 0 });
-        for (size_t i = 0; i < m_monsters.size(); i++) renderQueue.push_back({ m_monsters[i].mapX + m_monsters[i].mapY, 1, (int)i });
+        // [Range de visualizacao] So desenha monstros/NPCs dentro de m_entityViewRange
+        // celulas do boneco (distancia euclidiana), evitando poluir a tela quando muitos
+        // geradores estao ativos ao mesmo tempo.
+        for (size_t i = 0; i < m_monsters.size(); i++) {
+            float ddx = m_monsters[i].mapX - m_player.mapX;
+            float ddy = m_monsters[i].mapY - m_player.mapY;
+            if (std::sqrt(ddx * ddx + ddy * ddy) > m_entityViewRange) continue;
+            renderQueue.push_back({ m_monsters[i].mapX + m_monsters[i].mapY, 1, (int)i });
+        }
         for (size_t i = 0; i < m_sceneObjects.size(); i++) renderQueue.push_back({ m_sceneObjects[i].mapX + m_sceneObjects[i].mapY, 2, (int)i });
-        for (size_t i = 0; i < m_npcs.size(); i++) renderQueue.push_back({ m_npcs[i].mapX + m_npcs[i].mapY, 3, (int)i });
+        for (size_t i = 0; i < m_npcs.size(); i++) {
+            float ddx = m_npcs[i].mapX - m_player.mapX;
+            float ddy = m_npcs[i].mapY - m_player.mapY;
+            if (std::sqrt(ddx * ddx + ddy * ddy) > m_entityViewRange) continue;
+            renderQueue.push_back({ m_npcs[i].mapX + m_npcs[i].mapY, 3, (int)i });
+        }
         std::sort(renderQueue.begin(), renderQueue.end(), [](const RenderNode& a, const RenderNode& b) { return a.depth < b.depth; });
 
         for (const auto& node : renderQueue) {
@@ -3153,7 +3627,7 @@ public:
                     else if (m_player.isAlert) activeModel = &part.alertModel;
 
                     if (activeModel->isValid)
-                        m_renderer.DrawMesh3D(*activeModel, pZx, pZy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, true, m_zoom, nullptr, -1, 0, part.asb, part.adb, 1.0f, false, 0);
+                        m_renderer.DrawMesh3D(*activeModel, pZx, pZy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, m_playerPitch, true, m_zoom, nullptr, -1, 0, part.asb, part.adb, 1.0f, false, 0);
                 }
 
                 if (m_currentArmetParts.empty()) {
@@ -3170,7 +3644,7 @@ public:
                     else if (m_player.isMoving) { activeHair = m_isRunning ? &m_hairRunModel : &m_hairWalkModel; }
                     else if (m_player.isAlert) { activeHair = &m_hairAlertModel; }
 
-                    if (activeHair->isValid) m_renderer.DrawMesh3D(*activeHair, pZx, pZy - (m_player.jumpZ * m_zoom), m_hairTextureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom);
+                    if (activeHair->isValid) m_renderer.DrawMesh3D(*activeHair, pZx, pZy - (m_player.jumpZ * m_zoom), m_hairTextureId, m_player.currentFrame, m_player.facingAngle, m_playerPitch, false, m_zoom);
                 }
                 else {
                     for (auto& part : m_currentArmetParts) {
@@ -3188,7 +3662,7 @@ public:
                         else if (m_player.isAlert) activeModel = &part.alertModel;
 
                         if (activeModel->isValid)
-                            m_renderer.DrawMesh3D(*activeModel, pZx, pZy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, nullptr, -1, 0, part.asb, part.adb, 1.0f, false, 0);
+                            m_renderer.DrawMesh3D(*activeModel, pZx, pZy - (m_player.jumpZ * m_zoom), part.textureId, m_player.currentFrame, m_player.facingAngle, m_playerPitch, false, m_zoom, nullptr, -1, 0, part.asb, part.adb, 1.0f, false, 0);
                     }
                 }
 
@@ -3202,7 +3676,7 @@ public:
 
                 for (auto& wPart : m_rightWeaponParts) {
                     if (wPart.model.isValid && mainBodyModel) {
-                        m_renderer.DrawMesh3D(wPart.model, pZx, pZy - (m_player.jumpZ * m_zoom), wPart.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, rightWeaponBone, m_player.currentFrame, wPart.asb, wPart.adb, 1.0f, false, 0);
+                        m_renderer.DrawMesh3D(wPart.model, pZx, pZy - (m_player.jumpZ * m_zoom), wPart.textureId, m_player.currentFrame, m_player.facingAngle, m_playerPitch, false, m_zoom, mainBodyModel, rightWeaponBone, m_player.currentFrame, wPart.asb, wPart.adb, 1.0f, false, 0);
 
                         if (wPart.hasEffect) {
                             for (size_t i = 0; i < wPart.effectParts.size(); i++) {
@@ -3234,7 +3708,7 @@ public:
 
                 for (auto& wPart : m_leftWeaponParts) {
                     if (wPart.model.isValid && mainBodyModel) {
-                        m_renderer.DrawMesh3D(wPart.model, pZx, pZy - (m_player.jumpZ * m_zoom), wPart.textureId, m_player.currentFrame, m_player.facingAngle, 0.0f, false, m_zoom, mainBodyModel, leftWeaponBone, m_player.currentFrame, wPart.asb, wPart.adb, 1.0f, false, 0);
+                        m_renderer.DrawMesh3D(wPart.model, pZx, pZy - (m_player.jumpZ * m_zoom), wPart.textureId, m_player.currentFrame, m_player.facingAngle, m_playerPitch, false, m_zoom, mainBodyModel, leftWeaponBone, m_player.currentFrame, wPart.asb, wPart.adb, 1.0f, false, 0);
 
                         if (wPart.hasEffect) {
                             for (size_t i = 0; i < wPart.effectParts.size(); i++) {
@@ -3356,9 +3830,14 @@ public:
                     }
                 }
                 else {
-                    for (size_t p = 0; p < render.partModels.size(); p++) {
-                        if (render.partModels[p].isValid) {
-                            m_renderer.DrawMesh3D(render.partModels[p], zX, zY, render.partTextureIds[p], npc.currentFrame, npc.facingAngle, 0.0f, false, m_zoom, nullptr, -1, 0, render.asb, render.adb, 1.0f, false, 0);
+                    const std::vector<Resource::C3Model>* activeParts = &render.partModels;
+                    if (npc.animState == 1) activeParts = &render.partModelsRest;
+                    else if (npc.animState == 2) activeParts = &render.partModelsBlaze;
+                    if (activeParts->empty() || activeParts->size() != render.partModels.size()) activeParts = &render.partModels;
+
+                    for (size_t p = 0; p < activeParts->size(); p++) {
+                        if ((*activeParts)[p].isValid) {
+                            m_renderer.DrawMesh3D((*activeParts)[p], zX, zY, render.partTextureIds[p], npc.currentFrame, npc.facingAngle, 0.0f, false, m_zoom, nullptr, -1, 0, render.asb, render.adb, 1.0f, false, 0);
                         }
                     }
                 }
@@ -3374,6 +3853,15 @@ public:
 
         for (auto& effect : m_activeEffects) {
             if (effect.isWaitingDelay || effect.isWaitingInterval || effect.isFinished) continue;
+
+            // [Range de visualizacao] Efeitos presos ao mapa (nascimento de monstro, etc.)
+            // tambem respeitam m_entityViewRange; efeitos fixos na tela (isScreenFixed, ex.
+            // efeito de regiao/cidade) ou sem posicao de mapa nunca sao filtrados.
+            if (!effect.isScreenFixed && effect.mapX != -1.0f && effect.mapY != -1.0f) {
+                float edx = effect.mapX - m_player.mapX;
+                float edy = effect.mapY - m_player.mapY;
+                if (std::sqrt(edx * edx + edy * edy) > m_entityViewRange) continue;
+            }
 
             float drawCx = cx;
             float drawCy = cy - (effect.isScreenFixed ? 0.0f : (m_player.jumpZ * m_zoom));

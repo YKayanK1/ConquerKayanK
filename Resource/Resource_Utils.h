@@ -61,10 +61,14 @@ namespace Resource {
     }
 
     static uint32_t HashFilename(const std::string& filename) {
+        // [Hash] O cliente de referencia (ConquerMapViewer/WdfPackageReader.HashFilename)
+        // apenas coloca a string em minusculas (ToLower) antes de hashear; ele NAO troca
+        // '/' por '\'. Fazer essa troca aqui produzia um hash diferente do indice real do
+        // WDF, entao GetFileData nunca encontrava as texturas (ex.: bridge05/06/07.dds),
+        // mesmo elas existindo dentro do pacote.
         std::string str = filename;
         for (char& c : str) {
             c = std::tolower((unsigned char)c);
-            if (c == '/') c = '\\';
         }
 
         int pad = (str.length() % 4 != 0) ? (4 - (str.length() % 4)) : 0;

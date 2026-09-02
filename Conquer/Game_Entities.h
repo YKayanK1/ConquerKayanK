@@ -53,7 +53,7 @@ namespace Game {
         float jumpTimer = 0.0f, jumpZ = 0.0f;
         int currentFrame = 0;
         float animTimer = 0.0f;
-        float facingAngle = -0.78539f; // rotação do boneco
+        float facingAngle = -0.76539f; // rotação do boneco
 
         int nameTexId = -1, nameW = 0, nameH = 0;
 
@@ -66,7 +66,7 @@ namespace Game {
         RoleActionType queuedAttackAnim = RoleActionType::StandBy;
         uint32_t queuedAttackIndex = 0;
 
-        ModelType modelType = ModelType::SmallFemale;
+        ModelType modelType = ModelType::SmallMale;
         uint32_t armorId = 0;
         uint32_t rightHandWeaponId = 0;
         uint32_t leftHandWeaponId = 0;
@@ -139,6 +139,12 @@ namespace Game {
         // igual e feito para monstros/player, para nao ficar travado no frame 0.
         float animTimer = 0.0f;
         int currentFrame = 0;
+
+        // [Hover: Rest -> Blaze] Quando o mouse passa por cima, o NPC toca RestMotion uma vez
+        // e depois volta a tocar BlazeMotion em loop; ao tirar o mouse, volta para StandByMotion.
+        // 0 = StandBy (parado), 1 = Rest (uma vez), 2 = Blaze (loop enquanto hover ativo)
+        int animState = 0;
+        bool isHovered = false;
     };
 }
 

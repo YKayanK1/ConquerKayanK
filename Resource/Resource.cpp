@@ -88,7 +88,23 @@ namespace Resource {
             return {};
         }
 
-        std::vector<uint8_t> GetFileData(const std::string& internalPath) {
+        std::vector<uint8_t> GetFileData(const std::string& internalPathRaw) {
+            // [.msk -> .dds] Algumas texturas de cena/ponte (ex.: "bridge05.msk") sao apenas
+            // apelidos para o arquivo .dds real dentro do WDF; o arquivo fisico ".msk" que
+            // existe solto em disco (ex.: data/map/mapobj/plain/plain/bridge06.msk, 32768
+            // bytes = 128*128*2) NAO e a textura - e uma mascara de colisao/altura separada.
+            // A textura real esta empacotada dentro do .wdf como ".dds". Por isso sempre
+            // trocamos a extensao antes de resolver o arquivo (cache/loose/WDF), igual ao
+            // cliente de referencia (ConquerMapViewer/TextureCache.GetOrLoad).
+            std::string internalPath = internalPathRaw;
+            if (internalPath.size() >= 4) {
+                std::string ext = internalPath.substr(internalPath.size() - 4);
+                for (auto& c : ext) c = std::tolower((unsigned char)c);
+                if (ext == ".msk") {
+                    internalPath = internalPath.substr(0, internalPath.size() - 4) + ".dds";
+                }
+            }
+
             auto cached = m_fileCache.find(internalPath);
             if (cached != m_fileCache.end()) return cached->second;
 
@@ -127,7 +143,28 @@ namespace Resource {
         }
 
         DMapData LoadDMap(const std::string& path) {
-            return ParseDMapData(GetFileData(path));
+            // [isNewFormat] Confirmado pelo ConquerMapViewer (DetectNewFormat): mapas cujo nome
+            // termina em "_new" (antes da extensao) usam um layout binario com campos extras
+            // (efeitos 3D com 6 floats adicionais, objetos de terreno com ShowWay adicional).
+            // Sem essa deteccao o parser desalinha a leitura apos o primeiro efeito/objeto de
+            // terreno do formato novo, corrompendo o resto do arquivo (inclusive as Layers onde
+            // ficam objetos Scene como pontes).
+            bool isNewFormat = false;
+            size_t dot = path.find_last_of('.');
+            if (dot != std::string::npos && dot >= 4) {
+                std::string suffix = path.substr(dot - 4, 4);
+                for (auto& c : suffix) c = (char)std::tolower((unsigned char)c);
+                isNewFormat = (suffix == "_new");
+            }
+            std::cout << "[DMap] path='" << path << "' isNewFormat=" << (isNewFormat ? 1 : 0) << "\n";
+            DMapData result = ParseDMapData(GetFileData(path), isNewFormat);
+            std::cout << "[DMap] portais=" << result.portals.size() << " terrainObjects=" << result.terrainObjects.size()
+                << " sceneObjects=" << result.sceneObjects.size() << " width=" << result.width << " height=" << result.height << "\n";
+            return result;
+        }
+
+        SceneFileData LoadScene(const std::string& path) {
+            return ParseSceneFileData(GetFileData(path));
         }
 
         PulData LoadPul(const std::string& path) {
@@ -196,6 +233,10 @@ namespace Resource {
         std::unordered_map<uint32_t, NpcXConfig> ParseNpcXIni(const std::string& path) {
             return ParseNpcXIniData(GetFileData(path));
         }
+
+        std::vector<GeneratorEntry> ParseGeneratorCsv(const std::string& path) {
+            return ParseGeneratorCsvData(GetFileData(path));
+        }
     };
 
     Manager::Manager() : pImpl(new Impl()) {}
@@ -206,6 +247,7 @@ namespace Resource {
     std::vector<uint8_t> Manager::GetFileData(const std::string& ip) { return pImpl->GetFileData(ip); }
     C3Model Manager::LoadC3Model(const std::string& c3) { return pImpl->LoadC3Model(c3); }
     DMapData Manager::LoadDMap(const std::string& path) { return pImpl->LoadDMap(path); }
+    SceneFileData Manager::LoadScene(const std::string& path) { return pImpl->LoadScene(path); }
     PulData Manager::LoadPul(const std::string& path) { return pImpl->LoadPul(path); }
     std::unordered_map<uint32_t, GameMapRecord> Manager::LoadGameMapDat(const std::string& p) { return pImpl->LoadGameMapDat(p); }
     std::string Manager::ParseAniSection(const std::string& ani, const std::string& sec) { return pImpl->ParseAniSection(ani, sec); }
@@ -216,6 +258,7 @@ namespace Resource {
     std::unordered_map<uint32_t, NpcTypeConfig> Manager::ParseNpcTypeIni(const std::string& p) { return pImpl->ParseNpcTypeIni(p); }
     std::unordered_map<uint32_t, SimpleObjConfig> Manager::ParseSimpleObjIni(const std::string& p) { return pImpl->ParseSimpleObjIni(p); }
     std::unordered_map<uint32_t, NpcXConfig> Manager::ParseNpcXIni(const std::string& p) { return pImpl->ParseNpcXIni(p); }
+    std::vector<GeneratorEntry> Manager::ParseGeneratorCsv(const std::string& p) { return pImpl->ParseGeneratorCsv(p); }
 
     std::unordered_map<std::string, EffectConfig> Manager::Parse3DEffects(const std::string& path) { return pImpl->Parse3DEffects(path); }
     std::unordered_map<uint32_t, std::string> Manager::ParseResIni(const std::string& path) { return pImpl->ParseResIni(path); }

@@ -194,6 +194,14 @@ namespace Resource {
         int offsetX = 0, offsetY = 0;
     };
 
+    // [MAP_SCENE] Objeto tipo "Scene" do .dmap: aponta por caminho (nao por indice) para um
+    // modelo 3D de cena (ex.: pontes, estruturas), diferente de MapTerrainObject que e sprite
+    // 2D animado. Guarda apenas o caminho do arquivo de cena e a posicao no mapa.
+    struct RESOURCE_API MapSceneObject {
+        std::string scenePath;
+        int mapX = 0, mapY = 0;
+    };
+
     struct RESOURCE_API DMapData {
         bool isValid = false;
         uint32_t width = 0, height = 0;
@@ -201,6 +209,22 @@ namespace Resource {
         std::vector<MapCell> cells;
         std::vector<MapPortal> portals;
         std::vector<MapTerrainObject> terrainObjects;
+        std::vector<MapSceneObject> sceneObjects;
+    };
+
+    // [Scene file] Arquivo apontado por MapSceneObject::scenePath (ex.: pontes). Contem uma
+    // lista de "partes" (sprites animados) posicionadas em celulas relativas ao MapSceneObject,
+    // cada uma com seu proprio aniPath/aniName (textura) e offset em pixels na tela.
+    struct RESOURCE_API SceneObjectPart {
+        std::string aniPath;
+        std::string aniName;
+        int imageOffsetX = 0, imageOffsetY = 0;
+        int locationX = 0, locationY = 0;
+    };
+
+    struct RESOURCE_API SceneFileData {
+        bool isValid = false;
+        std::vector<SceneObjectPart> parts;
     };
 
     struct RESOURCE_API PulData {
@@ -295,6 +319,21 @@ namespace Resource {
         std::string effect;
     };
 
+    // ini\cq_generator.csv: geradores de monstros do servidor. Cada linha define uma area
+    // retangular (bound_x,bound_y,bound_cx,bound_cy) de um mapa onde ate "maxnpc" monstros
+    // do tipo "npctype" (== id em dbmonster.txt) podem existir simultaneamente. Quando um
+    // morre, apos "rest_secs" o gerador pode repor ate "max_per_gen" por ciclo.
+    struct RESOURCE_API GeneratorEntry {
+        uint32_t id = 0;
+        uint32_t mapId = 0;
+        int boundX = 0, boundY = 0, boundCx = 0, boundCy = 0;
+        int maxNpc = 0;
+        int restSecs = 0;
+        int maxPerGen = 0;
+        uint32_t npcType = 0;
+        int bornX = 0, bornY = 0;
+    };
+
     class RESOURCE_API Manager {
     public:
         Manager();
@@ -307,6 +346,7 @@ namespace Resource {
         C3Model LoadC3Model(const std::string& c3Path);
 
         DMapData LoadDMap(const std::string& mapPath);
+        SceneFileData LoadScene(const std::string& scenePath);
         PulData LoadPul(const std::string& pulPath);
         std::unordered_map<uint32_t, GameMapRecord> LoadGameMapDat(const std::string& path);
         std::string ParseAniSection(const std::string& aniPath, const std::string& sectionName);
@@ -329,6 +369,7 @@ namespace Resource {
         std::unordered_map<uint32_t, NpcTypeConfig> ParseNpcTypeIni(const std::string& filePath);
         std::unordered_map<uint32_t, SimpleObjConfig> ParseSimpleObjIni(const std::string& filePath);
         std::unordered_map<uint32_t, NpcXConfig> ParseNpcXIni(const std::string& filePath);
+        std::vector<GeneratorEntry> ParseGeneratorCsv(const std::string& filePath);
 
     private:
         struct Impl;
