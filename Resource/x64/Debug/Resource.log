@@ -199,82 +199,87 @@ D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(220,21): wa
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(227,38): warning C4251: 'Resource::SceneFileData::parts': 'std::vector<Resource::SceneObjectPart,std::allocator<Resource::SceneObjectPart>>' needs to have dll-interface to be used by clients of 'Resource::SceneFileData'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(228,30): warning C4251: 'Resource::SceneObjectPart::cells': 'std::vector<Resource::MapCell,std::allocator<Resource::MapCell>>' needs to have dll-interface to be used by clients of 'Resource::SceneObjectPart'
+  (compiling source file '/Resource.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::MapCell,std::allocator<Resource::MapCell>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(233,38): warning C4251: 'Resource::SceneFileData::parts': 'std::vector<Resource::SceneObjectPart,std::allocator<Resource::SceneObjectPart>>' needs to have dll-interface to be used by clients of 'Resource::SceneFileData'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
       see declaration of 'std::vector<Resource::SceneObjectPart,std::allocator<Resource::SceneObjectPart>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(232,21): warning C4251: 'Resource::PulData::puzzleType': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(238,21): warning C4251: 'Resource::PulData::puzzleType': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(232,33): warning C4251: 'Resource::PulData::aniFile': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(238,33): warning C4251: 'Resource::PulData::aniFile': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(234,30): warning C4251: 'Resource::PulData::tiles': 'std::vector<int16_t,std::allocator<int16_t>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(240,30): warning C4251: 'Resource::PulData::tiles': 'std::vector<int16_t,std::allocator<int16_t>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
       see declaration of 'std::vector<int16_t,std::allocator<int16_t>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(238,21): warning C4251: 'Resource::GameMapRecord::dmapPath': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::GameMapRecord'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(244,21): warning C4251: 'Resource::GameMapRecord::dmapPath': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::GameMapRecord'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(248,21): warning C4251: 'Resource::MusicRegionEntry::titleMusic': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(254,21): warning C4251: 'Resource::MusicRegionEntry::titleMusic': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(251,34): warning C4251: 'Resource::MusicRegionEntry::musics': 'std::vector<std::string,std::allocator<std::string>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(257,34): warning C4251: 'Resource::MusicRegionEntry::musics': 'std::vector<std::string,std::allocator<std::string>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
       see declaration of 'std::vector<std::string,std::allocator<std::string>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(252,26): warning C4251: 'Resource::MusicRegionEntry::musicTimes': 'std::vector<int,std::allocator<int>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(258,26): warning C4251: 'Resource::MusicRegionEntry::musicTimes': 'std::vector<int,std::allocator<int>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
       see declaration of 'std::vector<int,std::allocator<int>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(268,21): warning C4251: 'Resource::MapRegionEntry::regionName': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MapRegionEntry'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(274,21): warning C4251: 'Resource::MapRegionEntry::regionName': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MapRegionEntry'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(269,21): warning C4251: 'Resource::MapRegionEntry::effectName': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MapRegionEntry'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(275,21): warning C4251: 'Resource::MapRegionEntry::effectName': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MapRegionEntry'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(280,21): warning C4251: 'Resource::NpcDbEntry::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcDbEntry'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(286,21): warning C4251: 'Resource::NpcDbEntry::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcDbEntry'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(289,21): warning C4251: 'Resource::NpcTypeConfig::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcTypeConfig'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(295,21): warning C4251: 'Resource::NpcTypeConfig::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcTypeConfig'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(292,21): warning C4251: 'Resource::NpcTypeConfig::effect': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcTypeConfig'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(298,21): warning C4251: 'Resource::NpcTypeConfig::effect': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcTypeConfig'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(305,36): warning C4251: 'Resource::SimpleObjConfig::parts': 'std::vector<Resource::SimpleObjPart,std::allocator<Resource::SimpleObjPart>>' needs to have dll-interface to be used by clients of 'Resource::SimpleObjConfig'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(311,36): warning C4251: 'Resource::SimpleObjConfig::parts': 'std::vector<Resource::SimpleObjPart,std::allocator<Resource::SimpleObjPart>>' needs to have dll-interface to be used by clients of 'Resource::SimpleObjConfig'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
       see declaration of 'std::vector<Resource::SimpleObjPart,std::allocator<Resource::SimpleObjPart>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(310,21): warning C4251: 'Resource::NpcXConfig::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcXConfig'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(316,21): warning C4251: 'Resource::NpcXConfig::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcXConfig'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(319,21): warning C4251: 'Resource::NpcXConfig::effect': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcXConfig'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(325,21): warning C4251: 'Resource::NpcXConfig::effect': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcXConfig'
   (compiling source file '/Resource.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
@@ -297,4 +302,5 @@ D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource_C3.h(149,48):
 D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource_C3.h(156,44): warning C4018: '<': signed/unsigned mismatch
   (compiling source file '/Resource.cpp')
   
+     Creating library D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Resource.lib and object D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Resource.exp
   Resource.vcxproj -> D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Resource.dll

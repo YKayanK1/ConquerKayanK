@@ -919,6 +919,7 @@ namespace Graphics {
         }
 
         void EndFrame() { D3DContext::GetInstance().EndFrame(); }
+        void SetVSync(bool enabled) { D3DContext::GetInstance().m_vsync = enabled; }
         void LoadTexture(const wchar_t* filename) {}
         int LoadTextureFromMemory(const uint8_t* data, size_t size) { return renderer.LoadTextureFromMemory(data, size); }
         void DeleteTexture(int id) { renderer.DeleteTexture(id); }
@@ -944,6 +945,7 @@ namespace Graphics {
     }
 
     void SceneRenderer::EndFrame() { pImpl->EndFrame(); }
+    void SceneRenderer::SetVSync(bool enabled) { pImpl->SetVSync(enabled); }
     void SceneRenderer::LoadTexture(const wchar_t* filename) { pImpl->LoadTexture(filename); }
     int SceneRenderer::LoadTextureFromMemory(const uint8_t* data, size_t size) { return pImpl->LoadTextureFromMemory(data, size); }
     void SceneRenderer::DeleteTexture(int id) { pImpl->DeleteTexture(id); }

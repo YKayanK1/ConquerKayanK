@@ -187,6 +187,9 @@
     <ProjectReference Include="..\Resource\Resource.vcxproj">
       <Project>{a1d43b4c-50a4-4ff8-8f2f-695c95468530}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\Graphics_Riot\Graphics_Riot.vcxproj">
+      <Project>{7c2b6a3e-9d4f-4b8a-9c1e-1a2b3c4d5e6f}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

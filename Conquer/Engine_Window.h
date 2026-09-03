@@ -42,7 +42,10 @@ namespace Engine {
             return DefWindowProc(hWnd, message, wParam, lParam);
         }
 
-        bool Create(HINSTANCE hInstance, const wchar_t* title) {
+        // [Config.ini] Quando fullscreen=true, cria uma janela sem bordas (WS_POPUP) do tamanho
+        // exato da tela primaria, imitando o modo "tela cheia sem janela" pedido no config.ini
+        // (Fullscreen=1). Quando false, mantem o comportamento antigo de janela normal.
+        bool Create(HINSTANCE hInstance, const wchar_t* title, bool fullscreen = false) {
             WNDCLASSEXW wcex = {};
             wcex.cbSize = sizeof(WNDCLASSEX);
             wcex.style = CS_HREDRAW | CS_VREDRAW;
@@ -52,8 +55,20 @@ namespace Engine {
             wcex.lpszClassName = L"KayanKConquerEngineClass";
             RegisterClassExW(&wcex);
 
-            m_hWnd = CreateWindowExW(0, L"KayanKConquerEngineClass", title, WS_OVERLAPPEDWINDOW,
-                CW_USEDEFAULT, CW_USEDEFAULT, m_width, m_height, nullptr, nullptr, hInstance, this);
+            if (fullscreen) {
+                m_width = GetSystemMetrics(SM_CXSCREEN);
+                m_height = GetSystemMetrics(SM_CYSCREEN);
+                m_hWnd = CreateWindowExW(0, L"KayanKConquerEngineClass", title, WS_POPUP | WS_VISIBLE,
+                    0, 0, m_width, m_height, nullptr, nullptr, hInstance, this);
+            }
+            else {
+                RECT rect = { 0, 0, m_width, m_height };
+                AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
+                int windowW = rect.right - rect.left;
+                int windowH = rect.bottom - rect.top;
+                m_hWnd = CreateWindowExW(0, L"KayanKConquerEngineClass", title, WS_OVERLAPPEDWINDOW,
+                    CW_USEDEFAULT, CW_USEDEFAULT, windowW, windowH, nullptr, nullptr, hInstance, this);
+            }
 
             if (!m_hWnd) return false;
             ShowWindow(m_hWnd, SW_SHOW);

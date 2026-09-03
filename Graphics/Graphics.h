@@ -47,6 +47,7 @@ namespace Graphics {
         void Resize(int width, int height);
         void BeginFrame();
         void EndFrame();
+        void SetVSync(bool enabled);
 
         void DrawSprite(int textureId, int x, int y, int width, int height);
         void LoadTexture(const wchar_t* filename);

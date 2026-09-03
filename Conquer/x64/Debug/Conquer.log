@@ -199,82 +199,87 @@ D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(220,21): wa
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(227,38): warning C4251: 'Resource::SceneFileData::parts': 'std::vector<Resource::SceneObjectPart,std::allocator<Resource::SceneObjectPart>>' needs to have dll-interface to be used by clients of 'Resource::SceneFileData'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(228,30): warning C4251: 'Resource::SceneObjectPart::cells': 'std::vector<Resource::MapCell,std::allocator<Resource::MapCell>>' needs to have dll-interface to be used by clients of 'Resource::SceneObjectPart'
+  (compiling source file 'Conquer.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
+      see declaration of 'std::vector<Resource::MapCell,std::allocator<Resource::MapCell>>'
+  
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(233,38): warning C4251: 'Resource::SceneFileData::parts': 'std::vector<Resource::SceneObjectPart,std::allocator<Resource::SceneObjectPart>>' needs to have dll-interface to be used by clients of 'Resource::SceneFileData'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
       see declaration of 'std::vector<Resource::SceneObjectPart,std::allocator<Resource::SceneObjectPart>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(232,21): warning C4251: 'Resource::PulData::puzzleType': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(238,21): warning C4251: 'Resource::PulData::puzzleType': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(232,33): warning C4251: 'Resource::PulData::aniFile': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(238,33): warning C4251: 'Resource::PulData::aniFile': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(234,30): warning C4251: 'Resource::PulData::tiles': 'std::vector<int16_t,std::allocator<int16_t>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(240,30): warning C4251: 'Resource::PulData::tiles': 'std::vector<int16_t,std::allocator<int16_t>>' needs to have dll-interface to be used by clients of 'Resource::PulData'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
       see declaration of 'std::vector<int16_t,std::allocator<int16_t>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(238,21): warning C4251: 'Resource::GameMapRecord::dmapPath': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::GameMapRecord'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(244,21): warning C4251: 'Resource::GameMapRecord::dmapPath': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::GameMapRecord'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(248,21): warning C4251: 'Resource::MusicRegionEntry::titleMusic': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(254,21): warning C4251: 'Resource::MusicRegionEntry::titleMusic': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(251,34): warning C4251: 'Resource::MusicRegionEntry::musics': 'std::vector<std::string,std::allocator<std::string>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(257,34): warning C4251: 'Resource::MusicRegionEntry::musics': 'std::vector<std::string,std::allocator<std::string>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
       see declaration of 'std::vector<std::string,std::allocator<std::string>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(252,26): warning C4251: 'Resource::MusicRegionEntry::musicTimes': 'std::vector<int,std::allocator<int>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(258,26): warning C4251: 'Resource::MusicRegionEntry::musicTimes': 'std::vector<int,std::allocator<int>>' needs to have dll-interface to be used by clients of 'Resource::MusicRegionEntry'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
       see declaration of 'std::vector<int,std::allocator<int>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(268,21): warning C4251: 'Resource::MapRegionEntry::regionName': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MapRegionEntry'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(274,21): warning C4251: 'Resource::MapRegionEntry::regionName': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MapRegionEntry'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(269,21): warning C4251: 'Resource::MapRegionEntry::effectName': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MapRegionEntry'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(275,21): warning C4251: 'Resource::MapRegionEntry::effectName': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::MapRegionEntry'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(280,21): warning C4251: 'Resource::NpcDbEntry::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcDbEntry'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(286,21): warning C4251: 'Resource::NpcDbEntry::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcDbEntry'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(289,21): warning C4251: 'Resource::NpcTypeConfig::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcTypeConfig'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(295,21): warning C4251: 'Resource::NpcTypeConfig::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcTypeConfig'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(292,21): warning C4251: 'Resource::NpcTypeConfig::effect': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcTypeConfig'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(298,21): warning C4251: 'Resource::NpcTypeConfig::effect': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcTypeConfig'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(305,36): warning C4251: 'Resource::SimpleObjConfig::parts': 'std::vector<Resource::SimpleObjPart,std::allocator<Resource::SimpleObjPart>>' needs to have dll-interface to be used by clients of 'Resource::SimpleObjConfig'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(311,36): warning C4251: 'Resource::SimpleObjConfig::parts': 'std::vector<Resource::SimpleObjPart,std::allocator<Resource::SimpleObjPart>>' needs to have dll-interface to be used by clients of 'Resource::SimpleObjConfig'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\vector(459,7):
       see declaration of 'std::vector<Resource::SimpleObjPart,std::allocator<Resource::SimpleObjPart>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(310,21): warning C4251: 'Resource::NpcXConfig::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcXConfig'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(316,21): warning C4251: 'Resource::NpcXConfig::name': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcXConfig'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(319,21): warning C4251: 'Resource::NpcXConfig::effect': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcXConfig'
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource.h(325,21): warning C4251: 'Resource::NpcXConfig::effect': 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' needs to have dll-interface to be used by clients of 'Resource::NpcXConfig'
   (compiling source file 'Conquer.cpp')
       D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(589,7):
       see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
@@ -287,12 +292,45 @@ D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Graphics\Graphics.h(29,37): war
 D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Resource\Resource_Utils.h(79,15): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
   (compiling source file 'Conquer.cpp')
   
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(2591,30): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(3118,78): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(3387,78): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(3390,43): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(4022,22): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(4023,22): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(4033,25): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(4118,23): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(3309,30): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(3836,78): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(4105,78): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(4108,43): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(4807,22): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(4808,22): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(4818,25): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(4903,23): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xutility(5094,18): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data
+  (compiling source file 'Conquer.cpp')
+      D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xutility(5094,18):
+      the template instantiation context (the oldest one first) is
+          D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(2749,40):
+          see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+          with
+          [
+              _Elem=wchar_t,
+              _Iter=std::_String_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
+              _Alloc=std::allocator<char>
+          ]
+              D:\projetos\kayank2\conquer_kayank\ConquerKayanK\Conquer\Conquer.cpp(2749,40):
+              see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'Application::DrawImGuiPanel'
+          D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(862,17):
+          see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<wchar_t*,wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
+          with
+          [
+              _Size_type=unsigned __int64,
+              _Iter=wchar_t *,
+              _Sent=wchar_t *,
+              _Size=unsigned __int64
+          ]
+          D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\include\xstring(1018,18):
+          see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
+          with
+          [
+              _OutIt=char *,
+              _Size=unsigned __int64,
+              _InIt=wchar_t *,
+              _SizeTy=unsigned __int64
+          ]
+  
   Conquer.vcxproj -> D:\projetos\kayank2\conquer_kayank\ConquerKayanK\x64\Debug\Conquer.exe

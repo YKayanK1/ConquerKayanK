@@ -204,7 +204,16 @@ namespace Resource {
             size_t safeH = (sizeH > 0) ? (size_t)sizeH : 0;
             size_t cellBytes = safeW * safeH * 12;
             if (!br.CanRead(cellBytes)) break;
-            br.Skip(cellBytes);
+
+            part.sizeW = sizeW; part.sizeH = sizeH;
+            part.cells.resize(safeW * safeH);
+            for (size_t ci = 0; ci < safeW * safeH; ci++) {
+                MapCell cell;
+                cell.access = (int16_t)br.Read<int32_t>();
+                cell.surface = (int16_t)br.Read<int32_t>();
+                cell.elevation = (int16_t)br.Read<int32_t>();
+                part.cells[ci] = cell;
+            }
 
             if (!part.aniPath.empty()) scene.parts.push_back(part);
         }

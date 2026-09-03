@@ -19,6 +19,7 @@ namespace Graphics {
         Microsoft::WRL::ComPtr<ID3D11DepthStencilView> depthStencilView;
 
         int screenWidth, screenHeight;
+        bool m_vsync = true;
 
         void Initialize(HWND hwnd, int width, int height) {
             screenWidth = width; screenHeight = height;
@@ -68,7 +69,7 @@ namespace Graphics {
             context->ClearDepthStencilView(depthStencilView.Get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
         }
 
-        void EndFrame() { swapChain->Present(1, 0); }
+        void EndFrame() { swapChain->Present(m_vsync ? 1 : 0, 0); }
 
         void Resize(int width, int height) {
             if (!device || width == 0 || height == 0) return;

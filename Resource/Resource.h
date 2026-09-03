@@ -220,6 +220,12 @@ namespace Resource {
         std::string aniName;
         int imageOffsetX = 0, imageOffsetY = 0;
         int locationX = 0, locationY = 0;
+        // [Colisao/pulo] Dimensoes (em celulas) e grid de celulas (access/surface/elevation) do
+        // proprio arquivo de cena (ex.: ponte). Necessario para aplicar a colisao/agua correta
+        // do trecho da ponte sobre as celulas do mapa (que por padrao estao marcadas como agua
+        // por baixo dela), permitindo tanto andar quanto pular sobre a ponte.
+        int sizeW = 0, sizeH = 0;
+        std::vector<MapCell> cells;
     };
 
     struct RESOURCE_API SceneFileData {

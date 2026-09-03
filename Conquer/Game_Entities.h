@@ -113,6 +113,12 @@ namespace Game {
         float mapX, mapY;
         int width, height;
         int offsetX, offsetY;
+        // [Depth/z-order] Para objetos que ocupam varias celulas (ex.: partes de ponte),
+        // mapX/mapY sozinhos (celula-ancora) nao refletem corretamente a profundidade
+        // isometrica do objeto inteiro. depthKey usa a celula mais "proxima da camera"
+        // (canto de maior x+y) do footprint do objeto, para que o jogador seja desenhado
+        // na frente dela ao andar por cima/na frente, e atras quando estiver longe.
+        float depthKey;
     };
 
     // NPC estatico do mapa (loja/quest giver/decorativo). Renderizado parado com

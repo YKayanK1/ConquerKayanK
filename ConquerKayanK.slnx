@@ -9,6 +9,7 @@
   <Project Path="D:/projetos/kayank2/conquer_kayank/ConquerKayanK/Core/Core.vcxproj" Id="d8795c0a-6bfe-4ca8-af9e-fb1a0857fe97" />
   <Project Path="D:/projetos/kayank2/conquer_kayank/ConquerKayanK/Game/Game.vcxproj" Id="f6e05148-226c-4a5b-85dc-a58e171db408" />
   <Project Path="D:/projetos/kayank2/conquer_kayank/ConquerKayanK/Graphics/Graphics.vcxproj" Id="02841d0e-0e0c-45e2-a7d0-708e532c3b33" />
+  <Project Path="D:/projetos/kayank2/conquer_kayank/ConquerKayanK/Graphics_Riot/Graphics_Riot.vcxproj" Id="7c2b6a3e-9d4f-4b8a-9c1e-1a2b3c4d5e6f" />
   <Project Path="D:/projetos/kayank2/conquer_kayank/ConquerKayanK/Network/Network.vcxproj" Id="9c24ce62-1814-41c9-9865-f06b69d5303e" />
   <Project Path="D:/projetos/kayank2/conquer_kayank/ConquerKayanK/Resource/Resource.vcxproj" Id="a1d43b4c-50a4-4ff8-8f2f-695c95468530" />
   <Project Path="D:/projetos/kayank2/conquer_kayank/ConquerKayanK/UI/UI.vcxproj" Id="304662b4-a25a-476a-a5d8-5186602c867c" />

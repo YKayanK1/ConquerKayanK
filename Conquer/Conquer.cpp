@@ -16,12 +16,15 @@
 #include <ctime>   
 #include <sstream>
 #include <tuple> 
+#include <map>
+#include <filesystem>
 
 #include "../Graphics/Graphics.h"
 #include "../Graphics/Graphics_D3D.h"
 #include "../Resource/Resource.h"
 #include "../Resource/Resource_Utils.h"
 #include "../Audio/Audio.h"
+#include "../Graphics_Riot/Graphics_Riot.h"
 
 #include "Engine_Window.h"
 #include "Engine_Math.h"
@@ -33,6 +36,32 @@
 #include "imgui.h"
 #include "backends/imgui_impl_win32.h"
 #include "backends/imgui_impl_dx11.h"
+
+#include <commdlg.h>
+
+// Abre um dialogo padrao do Windows para escolher um arquivo. filter segue o formato do
+// OPENFILENAME (ex.: L"Arquivos SKN (*.skn)\0*.skn\0Todos os arquivos (*.*)\0*.*\0").
+// Retorna true e preenche outPath se o usuario confirmou a selecao.
+static bool OpenFileDialog(HWND owner, const wchar_t* filter, std::wstring& outPath) {
+    wchar_t buffer[MAX_PATH] = {};
+    if (!outPath.empty()) {
+        wcsncpy_s(buffer, outPath.c_str(), _TRUNCATE);
+    }
+
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = owner;
+    ofn.lpstrFilter = filter;
+    ofn.lpstrFile = buffer;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+    if (GetOpenFileNameW(&ofn)) {
+        outPath = buffer;
+        return true;
+    }
+    return false;
+}
 
 // [A PONTE INDESTRUTÍVEL DO LINKER] Importa a função Pura C global do Graphics.cpp
 extern "C" void SetSpriteUV(float u1, float v1, float u2, float v2);
@@ -221,10 +250,357 @@ public:
     std::string m_currentEffectName = "Nenhum";
     int m_splashTexId = -1; // [Tela de carregamento] data\main\LogoN.bmp exibida durante o Initialize()
 
+    // [Config.ini] Configuracoes de tela/desempenho lidas de "config.ini" (mesma pasta do .exe).
+    // Fullscreen=0 usa modo janela; Fullscreen=1 usa tela cheia sem janela (WS_POPUP no tamanho
+    // da tela primaria). FPSLimit=0 significa sem limite (apenas o VSync, se ativado, regula).
+    int m_configWidth = 1024;
+    int m_configHeight = 768;
+    bool m_configFullscreen = false;
+    bool m_configVSync = true;
+    int m_configFpsLimit = 60;
+
+    // [Config.ini] Le "config.ini" (arquivo texto simples, no formato [Secao]\nChave=Valor) da
+    // pasta de trabalho do executavel (ex.: x64\Debug\config.ini). Se o arquivo ou uma chave nao
+    // existir, mantem os valores padrao acima/em m_clientPath.
+    void LoadConfigIni(const std::string& path) {
+        std::ifstream file(path);
+        if (!file.is_open()) return;
+
+        std::string line, section;
+        while (std::getline(file, line)) {
+            // Remove comentarios (";" ou "#") e espacos nas pontas.
+            size_t commentPos = line.find_first_of(";#");
+            if (commentPos != std::string::npos) line = line.substr(0, commentPos);
+
+            size_t start = line.find_first_not_of(" \t\r\n");
+            if (start == std::string::npos) continue;
+            size_t end = line.find_last_not_of(" \t\r\n");
+            line = line.substr(start, end - start + 1);
+            if (line.empty()) continue;
+
+            if (line.front() == '[' && line.back() == ']') {
+                section = line.substr(1, line.size() - 2);
+                continue;
+            }
+
+            size_t eqPos = line.find('=');
+            if (eqPos == std::string::npos) continue;
+            std::string key = line.substr(0, eqPos);
+            std::string value = line.substr(eqPos + 1);
+
+            size_t keyEnd = key.find_last_not_of(" \t");
+            if (keyEnd != std::string::npos) key = key.substr(0, keyEnd + 1);
+            size_t valStart = value.find_first_not_of(" \t");
+            value = (valStart == std::string::npos) ? "" : value.substr(valStart);
+
+            if (section == "Client" && key == "ClientPath") {
+                if (!value.empty()) m_clientPath = value;
+            }
+            else if (section == "Display") {
+                if (key == "Width") m_configWidth = std::atoi(value.c_str());
+                else if (key == "Height") m_configHeight = std::atoi(value.c_str());
+                else if (key == "Fullscreen") m_configFullscreen = (std::atoi(value.c_str()) != 0);
+                else if (key == "VSync") m_configVSync = (std::atoi(value.c_str()) != 0);
+                else if (key == "FPSLimit") m_configFpsLimit = std::atoi(value.c_str());
+            }
+        }
+    }
+
+    // Retorna o diretorio onde o .exe esta localizado (nao o diretorio de trabalho atual, que no
+    // Visual Studio ao rodar com F5 normalmente e a pasta do projeto, e nao a pasta de saida onde
+    // fica o .exe e o lol_personagens.ini).
+    static std::string GetExeDirectory() {
+        wchar_t buffer[MAX_PATH];
+        DWORD len = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+        if (len == 0) return std::string();
+        std::filesystem::path exePath(buffer);
+        std::string dir = exePath.parent_path().string();
+        if (!dir.empty() && dir.back() != '\\' && dir.back() != '/') dir += '\\';
+        return dir;
+    }
+
+    // Resolve um caminho relativo (ex.: "lol_personagens.ini") para o diretorio do .exe, garantindo
+    // que o arquivo seja encontrado independente do diretorio de trabalho atual (CWD).
+    static std::string ResolvePathNextToExe(const std::string& relativeOrAbsolute) {
+        if (relativeOrAbsolute.size() >= 2 &&
+            (relativeOrAbsolute[1] == ':' || (relativeOrAbsolute[0] == '\\' && relativeOrAbsolute[1] == '\\'))) {
+            return relativeOrAbsolute; // ja e um caminho absoluto
+        }
+        return GetExeDirectory() + relativeOrAbsolute;
+    }
+
+    // Faz split de uma string separada por virgulas (com espacos opcionais apos a virgula),
+    // usado para ler "nomes=" do lol_personagens.ini.
+    struct RiotIniAnimEntry { std::string name; std::string path; };
+    static std::vector<std::string> SplitCommaList(const std::string& value) {
+        std::vector<std::string> result;
+        size_t pos = 0;
+        while (pos <= value.size()) {
+            size_t comma = value.find(',', pos);
+            std::string token = (comma == std::string::npos) ? value.substr(pos) : value.substr(pos, comma - pos);
+            size_t s = token.find_first_not_of(" \t\r\n");
+            size_t e = token.find_last_not_of(" \t\r\n");
+            if (s != std::string::npos) result.push_back(token.substr(s, e - s + 1));
+            if (comma == std::string::npos) break;
+            pos = comma + 1;
+        }
+        return result;
+    }
+
+    // [lol_personagens.ini] Novo formato simplificado: apenas [champs]/nomes=aatrox,ahri,...
+    // A partir do nome do champ, a lista de skins e os arquivos de cada skin sao descobertos
+    // diretamente na pasta de assets (ver ScanRiot2Skins/ScanRiot2SkinFiles), sem depender mais
+    // de caminhos gravados no .ini.
+    void LoadRiotChampionsIni(const std::string& path) {
+        std::string resolvedPath = ResolvePathNextToExe(path);
+        std::ifstream file(resolvedPath);
+        if (!file.is_open()) {
+            std::cout << "[Riot2] Nao foi possivel abrir " << resolvedPath << std::endl;
+            return;
+        }
+
+        std::string line, section;
+        while (std::getline(file, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+
+
+            if (line.front() == '[' && line.back() == ']') {
+                section = line.substr(1, line.size() - 2);
+                continue;
+            }
+
+            size_t eqPos = line.find('=');
+            if (eqPos == std::string::npos) continue;
+            std::string key = line.substr(0, eqPos);
+            std::string value = line.substr(eqPos + 1);
+
+            if (section == "champs" && key == "nomes") {
+                m_riot2ChampList = SplitCommaList(value);
+            }
+        }
+
+        std::sort(m_riot2ChampList.begin(), m_riot2ChampList.end());
+        std::cout << "[Riot2] lol_personagens.ini carregado: " << m_riot2ChampList.size() << " campeoes." << std::endl;
+    }
+
+    // Lista as subpastas de "assets/characters/<champ>/skins/" (ex.: base, skin01, skin02...),
+    // com "base" sempre primeiro.
+    std::vector<std::string> ScanRiot2Skins(const std::string& champ) {
+        std::vector<std::string> skins;
+        std::string skinsDir = m_riotAssetsRoot + "assets/characters/" + champ + "/skins/";
+        std::error_code ec;
+        if (!std::filesystem::exists(skinsDir, ec) || !std::filesystem::is_directory(skinsDir, ec)) return skins;
+
+        for (const auto& entry : std::filesystem::directory_iterator(skinsDir, ec)) {
+            if (!entry.is_directory()) continue;
+            skins.push_back(entry.path().filename().string());
+        }
+        std::sort(skins.begin(), skins.end(), [](const std::string& a, const std::string& b) {
+            if (a == "base") return true;
+            if (b == "base") return false;
+            return a < b;
+            });
+        return skins;
+    }
+
+    // Varre a pasta de uma skin especifica e devolve os arquivos encontrados: skn/skl (0 ou 1
+    // cada), todas as texturas (.tex/.dds, incluindo as usadas por meshes extras como armas/props)
+    // e todas as animacoes (.anm) dentro da subpasta "animations/".
+    struct RiotSkinFiles {
+        std::string sknPath;   // relativo a m_riotAssetsRoot
+        std::string sklPath;
+        std::vector<std::string> texPaths; // relativos a m_riotAssetsRoot
+        std::vector<RiotIniAnimEntry> anims; // name = nome do arquivo, path = relativo a m_riotAssetsRoot
+    };
+
+    RiotSkinFiles ScanRiot2SkinFiles(const std::string& champ, const std::string& skin) {
+        RiotSkinFiles result;
+        std::string relBase = "assets/characters/" + champ + "/skins/" + skin + "/";
+        std::string fullBase = m_riotAssetsRoot + relBase;
+        std::error_code ec;
+        if (!std::filesystem::exists(fullBase, ec) || !std::filesystem::is_directory(fullBase, ec)) return result;
+
+        for (const auto& entry : std::filesystem::directory_iterator(fullBase, ec)) {
+            if (!entry.is_regular_file()) continue;
+            std::string ext = entry.path().extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+            std::string relPath = relBase + entry.path().filename().string();
+
+            if (ext == ".skn" && result.sknPath.empty()) result.sknPath = relPath;
+            else if (ext == ".skl" && result.sklPath.empty()) result.sklPath = relPath;
+            else if (ext == ".tex" || ext == ".dds") result.texPaths.push_back(relPath);
+        }
+
+        std::string animsDir = fullBase + "animations/";
+        if (std::filesystem::exists(animsDir, ec) && std::filesystem::is_directory(animsDir, ec)) {
+            for (const auto& entry : std::filesystem::directory_iterator(animsDir, ec)) {
+                if (!entry.is_regular_file()) continue;
+                std::string ext = entry.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+                if (ext != ".anm") continue;
+                std::string fileName = entry.path().filename().string();
+                result.anims.push_back({ fileName, relBase + "animations/" + fileName });
+            }
+        }
+        std::sort(result.texPaths.begin(), result.texPaths.end());
+        std::sort(result.anims.begin(), result.anims.end(), [](const RiotIniAnimEntry& a, const RiotIniAnimEntry& b) { return a.name < b.name; });
+        return result;
+    }
+
+    // Resolve os arquivos finais (skn/skl/texturas/animacoes) para o champ+skin escolhidos no
+    // painel "Riot Champion 2 (LoL)", varrendo as pastas diretamente. Se a skin escolhida nao
+    // tiver skn/skl/anm proprios (comum em skins alternativas), usa os da skin "base" do mesmo
+    // champ, mas mantem as texturas encontradas na pasta da skin escolhida.
+    void ResolveRiot2Selection() {
+        m_riot2ResolvedSkn.clear();
+        m_riot2ResolvedSkl.clear();
+        m_riot2ResolvedTexPaths.clear();
+        m_riot2ResolvedAnims.clear();
+
+        if (m_riot2ChampIdx < 0 || m_riot2ChampIdx >= (int)m_riot2ChampList.size()) return;
+        const std::string& champ = m_riot2ChampList[m_riot2ChampIdx];
+
+        auto skinsIt = m_riot2SkinsByChamp.find(champ);
+        if (skinsIt == m_riot2SkinsByChamp.end()) {
+            m_riot2SkinsByChamp[champ] = ScanRiot2Skins(champ);
+            skinsIt = m_riot2SkinsByChamp.find(champ);
+        }
+        if (skinsIt == m_riot2SkinsByChamp.end() || skinsIt->second.empty()) return;
+        if (m_riot2SkinIdx < 0 || m_riot2SkinIdx >= (int)skinsIt->second.size()) m_riot2SkinIdx = 0;
+        const std::string& skin = skinsIt->second[m_riot2SkinIdx];
+
+        RiotSkinFiles selFiles = ScanRiot2SkinFiles(champ, skin);
+        RiotSkinFiles baseFiles = (skin != "base") ? ScanRiot2SkinFiles(champ, "base") : selFiles;
+
+        m_riot2ResolvedSkn = !selFiles.sknPath.empty() ? selFiles.sknPath : baseFiles.sknPath;
+        m_riot2ResolvedSkl = !selFiles.sklPath.empty() ? selFiles.sklPath : baseFiles.sklPath;
+        m_riot2ResolvedAnims = !selFiles.anims.empty() ? selFiles.anims : baseFiles.anims;
+        // Texturas: sempre prioriza as encontradas na pasta da skin escolhida (mesmo quando skn/skl
+        // vem da base), pois cada skin traz suas proprias texturas mesmo sem skn/skl proprios.
+        m_riot2ResolvedTexPaths = !selFiles.texPaths.empty() ? selFiles.texPaths : baseFiles.texPaths;
+
+        if (m_riot2AnimIdx < 0 || m_riot2AnimIdx >= (int)m_riot2ResolvedAnims.size()) m_riot2AnimIdx = 0;
+    }
+
+    void UpdateRiot2NameTexture() {
+        if (m_riot2NameTexId != -1) {
+            m_renderer.DeleteTexture(m_riot2NameTexId);
+            m_riot2NameTexId = -1;
+        }
+        if (m_riot2Name.empty()) return;
+        std::wstring wname(m_riot2Name.begin(), m_riot2Name.end());
+        auto texData = Game::GenerateTextTexture(m_renderer, wname, RGB(0, 255, 255));
+        m_riot2NameTexId = std::get<0>(texData);
+        m_riot2NameW = std::get<1>(texData);
+        m_riot2NameH = std::get<2>(texData);
+    }
+
+    // Constroi a lista de nomes de submesh atual do modelo Riot2 (apos aplicar/recarregar),
+    // junto com o estado de visibilidade e a textura selecionada para cada um (indice em
+    // m_riot2ResolvedTexPaths, -1 = usa a textura padrao do modelo).
+    void RefreshRiot2SubMeshUiState() {
+        m_riot2SubMeshTexChoice.clear();
+        int count = GraphicsRiot::GetRiotSubMeshCount(m_riot2Handle);
+        m_riot2SubMeshTexChoice.resize(count, -1);
+    }
+
+    void ApplyRiot2Champion() {
+        if (GraphicsRiot::IsRiotModelValid(m_riot2Handle)) {
+            GraphicsRiot::UnloadRiotChampion(m_riot2Handle);
+            m_riot2Handle = GraphicsRiot::InvalidRiotModelHandle;
+        }
+
+        ResolveRiot2Selection();
+
+        if (m_riot2ResolvedSkn.empty() || m_riot2ResolvedSkl.empty()) {
+            std::cout << "[Riot2] Nao foi possivel aplicar: skn/skl nao encontrados para a selecao atual." << std::endl;
+            return;
+        }
+
+        std::string sknFull = m_riotAssetsRoot + m_riot2ResolvedSkn;
+        std::string sklFull = m_riotAssetsRoot + m_riot2ResolvedSkl;
+        std::string anmFull;
+        if (!m_riot2ResolvedAnims.empty() && m_riot2AnimIdx >= 0 && m_riot2AnimIdx < (int)m_riot2ResolvedAnims.size()) {
+            anmFull = m_riotAssetsRoot + m_riot2ResolvedAnims[m_riot2AnimIdx].path;
+        }
+        // Textura padrao (compartilhada por todos os submeshes que nao tiverem override): a
+        // primeira textura encontrada na pasta da skin.
+        std::string texFullUtf8 = m_riot2ResolvedTexPaths.empty() ? std::string() : (m_riotAssetsRoot + m_riot2ResolvedTexPaths[0]);
+        std::wstring texFull(texFullUtf8.begin(), texFullUtf8.end());
+
+        m_riot2Handle = GraphicsRiot::LoadRiotChampion(sknFull.c_str(), sklFull.c_str(), anmFull.c_str(), texFull.c_str());
+
+        if (!GraphicsRiot::IsRiotModelValid(m_riot2Handle)) {
+            std::cout << "[Riot2] Falha ao aplicar o champion selecionado (" << sknFull << ")." << std::endl;
+        }
+        else {
+            std::cout << "[Riot2] Champion aplicado com sucesso: " << sknFull << std::endl;
+            RefreshRiot2SubMeshUiState();
+        }
+    }
+
+    void RemoveRiot2Champion() {
+        if (GraphicsRiot::IsRiotModelValid(m_riot2Handle)) {
+            GraphicsRiot::UnloadRiotChampion(m_riot2Handle);
+        }
+        m_riot2Handle = GraphicsRiot::InvalidRiotModelHandle;
+        m_riot2Enabled = false;
+        m_riot2SubMeshTexChoice.clear();
+    }
+
     Engine::WindowManager m_window;
     Graphics::SceneRenderer m_renderer;
     Resource::Manager m_resource;
     Audio::Manager m_audio;
+
+    // [TESTE] Champion do LoL carregado como monstro via Graphics_Riot (.skn/.skl/.anm).
+    GraphicsRiot::RiotModelHandle m_riotTestHandle = GraphicsRiot::InvalidRiotModelHandle;
+
+    // Controle via ImGui: caminhos dos arquivos e transform (angulo/escala) do champion Riot.
+    std::string m_riotSknPath;
+    std::string m_riotSklPath;
+    std::string m_riotAnmPath;
+    std::wstring m_riotTexPath;
+    float m_riotAngleDeg = 0.0f;
+    float m_riotScale = 1.0f;
+
+    // Nome exibido acima do champion Riot e sua barra de vida (cor azul, definida via ImGui).
+    std::string m_riotName;
+    int m_riotNameTexId = -1;
+    int m_riotNameW = 0;
+    int m_riotNameH = 0;
+    float m_riotHpRatio = 1.0f; // 0.0 - 1.0
+    int m_texHpBlueRiot = -1;
+
+    // ------------------------------------------------------------------
+    // "Riot Champion 2 (LoL)": segundo slot de campeao, carregado a partir
+    // do catalogo lol_personagens.ini (apenas [champs]/nomes=aatrox,ahri,...)
+    // com skins/arquivos/animacoes descobertos diretamente nas pastas de
+    // assets/characters/<champ>/skins/<skin>/, ao inves de caminhos manuais.
+    // ------------------------------------------------------------------
+    std::string m_riotAssetsRoot = "F:\\Coisas lol\\novo_tudo\\Game\\";
+    std::vector<std::string> m_riot2ChampList; // nomes unicos de champ (ex.: "aatrox")
+    std::map<std::string, std::vector<std::string>> m_riot2SkinsByChamp; // "aatrox" -> ["base","skin01",...] (cache de scan)
+
+    GraphicsRiot::RiotModelHandle m_riot2Handle = GraphicsRiot::InvalidRiotModelHandle;
+    bool m_riot2Enabled = false;
+    int m_riot2ChampIdx = 0;
+    int m_riot2SkinIdx = 0;
+    int m_riot2AnimIdx = 0;
+    float m_riot2AngleDeg = 0.0f;
+    float m_riot2Scale = 1.0f;
+    std::string m_riot2Name;
+    int m_riot2NameTexId = -1;
+    int m_riot2NameW = 0;
+    int m_riot2NameH = 0;
+    float m_riot2HpRatio = 1.0f;
+    // Resolved (com fallback para a skin "base" quando skn/skl/anm nao existirem na skin escolhida).
+    std::string m_riot2ResolvedSkn, m_riot2ResolvedSkl;
+    std::vector<std::string> m_riot2ResolvedTexPaths; // todas as texturas .tex/.dds da pasta da skin (objeto0 = padrao)
+    std::vector<RiotIniAnimEntry> m_riot2ResolvedAnims;
+    // Para cada submesh do modelo carregado, indice em m_riot2ResolvedTexPaths escolhido no ImGui
+    // (-1 = usa a textura padrao do modelo, ou seja, m_riot2ResolvedTexPaths[0]).
+    std::vector<int> m_riot2SubMeshTexChoice;
 
     Game::PlayerEntity m_player;
     uint32_t m_currentArmetId = 0;
@@ -985,8 +1361,29 @@ public:
     }
 
     bool Initialize(HINSTANCE hInstance) {
-        if (!m_window.Create(hInstance, L"Conquer Kayank - Engine Master")) return false;
+        // [Config.ini] Carrega ClientPath, resolucao, fullscreen, vsync e fps limit antes de criar
+        // a janela/dispositivo, para que a janela ja nasca com o tamanho/modo configurado.
+        LoadConfigIni("config.ini");
+
+        m_window.m_width = m_configWidth;
+        m_window.m_height = m_configHeight;
+        if (!m_window.Create(hInstance, L"Conquer Kayank - Engine Master", m_configFullscreen)) return false;
         m_renderer.Initialize(m_window.m_hWnd, m_window.m_width, m_window.m_height);
+        m_renderer.SetVSync(m_configVSync);
+
+        // [TESTE] Inicializa o modulo Graphics_Riot com o mesmo device/context do renderer
+        // principal e carrega um unico campeao para validar o pipeline .skn/.skl/.anm.
+        // Os campos abaixo tambem alimentam o painel ImGui "Riot Champion (LoL)", permitindo
+        // trocar o modelo em tempo real sem reiniciar o jogo.
+        GraphicsRiot::Initialize(m_renderer.GetD3DDevice(), m_renderer.GetD3DContext(), m_window.m_width, m_window.m_height);
+        //m_riotSknPath = "D:\\coisas lol\\2026_extraidos\\champs\\assets\\characters\\aurelionsol\\skins\\base\\aurelionsol.skn";
+        //m_riotSklPath = "D:\\coisas lol\\2026_extraidos\\champs\\assets\\characters\\aurelionsol\\skins\\base\\aurelionsol.skl";
+        //m_riotAnmPath = "D:\\coisas lol\\2026_extraidos\\champs\\assets\\characters\\aurelionsol\\skins\\base\\animations\\aurelionsol_idle1.anm";
+        //m_riotTexPath = L"D:\\coisas lol\\2026_extraidos\\champs\\assets\\characters\\aurelionsol\\skins\\base\\aurelionsol_body_tx_cm.ds";
+        ApplyRiotChampion();
+
+        LoadRiotChampionsIni("lol_personagens.ini");
+
 
         m_audio.Initialize();
 
@@ -1000,9 +1397,13 @@ public:
             if (m_zoom > 3.0f) m_zoom = 3.0f;
             };
 
+        // [Log de carregamento - WDF] Marca a duracao da leitura dos pacotes .wdf do cliente.
+        auto wdfLoadStart = std::chrono::steady_clock::now();
         if (!m_resource.Initialize(m_clientPath)) return false;
+        double wdfLoadSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - wdfLoadStart).count();
+        std::cout << "[Load] wdf demorou " << wdfLoadSeconds << " segundos para carregar...\n";
 
-        // [Tela de carregamento] Sorteia data\main\LogoN.bmp (N=1..5, na ordem sorteada,
+        // [Tela de carregamento] Sorteia data\main\LogoN.bmp
         // pulando os que nao existem) e exibe centralizado 500x375 enquanto o restante dos
         // recursos (mapas, npcs, monstros, efeitos, etc.) e carregado logo abaixo. A tela
         // fecha sozinha (DeleteTexture) assim que o carregamento termina, antes do jogo abrir.
@@ -1086,6 +1487,9 @@ public:
             return -1;
             };
 
+        // [Log de carregamento - DDS's] Marca a duracao do carregamento das texturas .dds da UI principal.
+        auto ddsLoadStart = std::chrono::steady_clock::now();
+
         m_texMainDialog1 = loadGuiFile("data\\main\\mainDialog1.dds");
         m_texMainDialog2 = loadGuiFile("data\\main\\mainDialog2.dds");
 
@@ -1111,12 +1515,16 @@ public:
         m_texProgressHP = loadGuiFile("data\\main\\ProgressHP.dds");
         m_texProgressMP = loadGuiFile("data\\main\\ProgressMP.dds");
 
+        double ddsLoadSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - ddsLoadStart).count();
+        std::cout << "[Load] dds's demoraram " << ddsLoadSeconds << " segundos para carregar...\n";
+
         LoadMagicIcons();
 
         m_texHpRed = Game::GenerateColorDDS(m_renderer, 220, 20, 20);
         m_texHpBlack = Game::GenerateColorDDS(m_renderer, 15, 15, 15);
         m_texHpOrange = Game::GenerateColorDDS(m_renderer, 255, 140, 0);
         m_texMpBlue = Game::GenerateColorDDS(m_renderer, 50, 150, 255);
+        m_texHpBlueRiot = Game::GenerateColorDDS(m_renderer, 40, 120, 255);
 
         auto texData = Game::GenerateTextTexture(m_renderer, L"KayanK", RGB(255, 255, 255));
         m_player.nameTexId = std::get<0>(texData);
@@ -1137,13 +1545,20 @@ public:
         m_currentArmetId = 0;
         m_currentGarmentId = 0;
 
+        // [Log de carregamento - Mesh do boneco] Marca a duracao do carregamento dos modelos
+        // .c3 (arma, armadura, elmo, roupa) do personagem principal.
+        auto meshLoadStart = std::chrono::steady_clock::now();
+
         ChangeWeapon(0, 0);
         ChangeArmor(Game::ModelType::SmallMale, m_player.armorId);
         ChangeArmet(Game::ModelType::SmallMale, m_currentArmetId);
         ChangeGarment(Game::ModelType::SmallMale, m_currentGarmentId);
 
+        double meshLoadSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - meshLoadStart).count();
+        std::cout << "[Load] mesh do boneco demorou " << meshLoadSeconds << " segundos para carregar...\n";
+
         auto gameMaps = m_resource.LoadGameMapDat("ini\\GameMap.dat");
-        const int currentMapId = 1002; // TwinCity: possui arvores, agua e elevacao de terreno (escadas)
+        const int currentMapId = 1005; // TwinCity: possui arvores, agua e elevacao de terreno (escadas)
 
         auto allMusicRegions = m_resource.ParseMusicRegions("ini\\MusicRegion.ini");
         m_musicRegions.clear();
@@ -1218,6 +1633,11 @@ public:
         }
         m_monsters.clear();
 
+        // [Log de carregamento - Mapa] Marca a duracao do carregamento do mapa (.dmap, .pul,
+        // minimapa, tiles, terrain objects, scene objects/pontes e portais). Nao inclui
+        // efeitos, monstros ou NPCs, que sao tratados separadamente.
+        auto mapLoadStart = std::chrono::steady_clock::now();
+
         if (gameMaps.count(currentMapId)) {
             m_currentDMap = m_resource.LoadDMap(gameMaps[currentMapId].dmapPath);
             if (m_currentDMap.isValid) {
@@ -1287,6 +1707,7 @@ public:
 
                         obj.mapX = (float)terrain.mapX; obj.mapY = (float)terrain.mapY;
                         obj.offsetX = terrain.offsetX; obj.offsetY = terrain.offsetY;
+                        obj.depthKey = obj.mapX + obj.mapY;
                         m_sceneObjects.push_back(obj);
                     }
                 }
@@ -1346,7 +1767,41 @@ public:
                             // Porem partes de cena/ponte (SceneDrawingComponent da referencia) SOMAM o ImageOffset em vez
                             // de subtrair. Negamos aqui para reaproveitar o mesmo pipeline com o sinal correto.
                             obj.offsetX = -part.imageOffsetX; obj.offsetY = -part.imageOffsetY;
+
+                            // [Depth/z-order] O restante do pipeline (jogador, monstros, NPCs) ordena
+                            // exclusivamente pela celula-ancora (mapX+mapY), igual ao TerrainObjectDrawingComponent
+                            // de referencia ("sort by cell depth: Location.X + Location.Y"). Usar o canto mais
+                            // distante do retangulo da parte fazia a ponte quase sempre "ganhar" da comparacao de
+                            // profundidade contra o boneco, mesmo quando ele estava numa celula da tela mais
+                            // proxima da camera do que a ancora da ponte - por isso ela sempre desenhava por cima.
+                            // Mantemos a mesma convencao usada pelas demais entidades: apenas a celula-ancora.
+                            obj.depthKey = obj.mapX + obj.mapY;
+
                             m_sceneObjects.push_back(obj);
+
+                            // [Colisao/pulo] O grid de celulas do proprio arquivo de cena (part.cells) descreve
+                            // apenas o sprite retangular da parte da ponte; como a ponte e "diagonal" dentro
+                            // desse retangulo, varias celulas nos cantos ficam marcadas como Inaccessible(1)
+                            // mesmo fazendo parte do caminho visual da ponte. Copiar esse grid cru por
+                            // cima do mapa (como antes) deixava buracos que bloqueavam andar/pular.
+                            //
+                            // A referencia (MapFileLoader.TrySetAccess) marca apenas a celula-ancora da cena
+                            // como Accessible/Scene; para o footprint inteiro da parte ficar andavel/pulavel,
+                            // forcamos TODAS as celulas do retangulo da parte como acessiveis (access=0) e
+                            // fora d'agua (surface=0), em vez de usar o access bruto do arquivo de cena.
+                            if (part.sizeW > 0 && part.sizeH > 0) {
+                                for (int cy = 0; cy < part.sizeH; cy++) {
+                                    for (int cx = 0; cx < part.sizeW; cx++) {
+                                        int mapCellX = sceneObj.mapX + part.locationX + cx;
+                                        int mapCellY = sceneObj.mapY + part.locationY + cy;
+                                        if (mapCellX < 0 || mapCellY < 0 ||
+                                            (uint32_t)mapCellX >= m_currentDMap.width || (uint32_t)mapCellY >= m_currentDMap.height) continue;
+                                        Resource::MapCell& mapCell = m_currentDMap.cells[(size_t)mapCellY * m_currentDMap.width + mapCellX];
+                                        mapCell.access = 0;  // Accessible
+                                        mapCell.surface = 0; // nao-agua (nao muda animacao de nadar sobre a ponte)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1359,6 +1814,9 @@ public:
                 }
             }
         }
+
+        double mapLoadSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - mapLoadStart).count();
+        std::cout << "[Load] mapa demorou " << mapLoadSeconds << " segundos para carregar...\n";
 
         // [Tela de carregamento] Tudo carregado (mapa, npcs, geradores, efeitos, etc.):
         // fecha a splash antes de abrir a tela normal do jogo.
@@ -2216,9 +2674,261 @@ public:
         }
     }
 
+    void ApplyRiotChampion() {
+        if (GraphicsRiot::IsRiotModelValid(m_riotTestHandle)) {
+            GraphicsRiot::UnloadRiotChampion(m_riotTestHandle);
+            m_riotTestHandle = GraphicsRiot::InvalidRiotModelHandle;
+        }
+
+        if (m_riotSknPath.empty() || m_riotSklPath.empty()) {
+            std::cout << "[Riot] Nao foi possivel aplicar: informe ao menos o .skn e o .skl." << std::endl;
+            return;
+        }
+
+        m_riotTestHandle = GraphicsRiot::LoadRiotChampion(
+            m_riotSknPath.c_str(),
+            m_riotSklPath.c_str(),
+            m_riotAnmPath.c_str(),
+            m_riotTexPath.c_str());
+
+        if (!GraphicsRiot::IsRiotModelValid(m_riotTestHandle)) {
+            std::cout << "[Riot] Falha ao aplicar o champion informado via ImGui." << std::endl;
+        }
+        else {
+            std::cout << "[Riot] Champion aplicado com sucesso via ImGui." << std::endl;
+        }
+    }
+
+    void RemoveRiotChampion() {
+        if (GraphicsRiot::IsRiotModelValid(m_riotTestHandle)) {
+            GraphicsRiot::UnloadRiotChampion(m_riotTestHandle);
+        }
+        m_riotTestHandle = GraphicsRiot::InvalidRiotModelHandle;
+    }
+
+    void UpdateRiotNameTexture() {
+        if (m_riotNameTexId != -1) {
+            m_renderer.DeleteTexture(m_riotNameTexId);
+            m_riotNameTexId = -1;
+        }
+        if (m_riotName.empty()) return;
+
+        std::wstring wname(m_riotName.begin(), m_riotName.end());
+        // Ciano, conforme pedido (nome do champion Riot em destaque acima da cabeca).
+        auto texData = Game::GenerateTextTexture(m_renderer, wname, RGB(0, 255, 255));
+        m_riotNameTexId = std::get<0>(texData);
+        m_riotNameW = std::get<1>(texData);
+        m_riotNameH = std::get<2>(texData);
+    }
+
     void DrawImGuiPanel() {
         ImGui::SetNextWindowPos(ImVec2(10, 60), ImGuiCond_FirstUseEver); ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
         ImGui::Begin("Painel de Controle KayanK");
+
+        if (ImGui::CollapsingHeader("Riot Champion (LoL)")) {
+            auto pathField = [this](const char* label, const wchar_t* dialogTitleFilter, std::string& path) {
+                char buf[512];
+                strncpy_s(buf, path.c_str(), _TRUNCATE);
+                ImGui::PushID(label);
+                ImGui::InputText(label, buf, sizeof(buf), ImGuiInputTextFlags_ReadOnly);
+                ImGui::SameLine();
+                if (ImGui::Button("...")) {
+                    std::wstring wpath(path.begin(), path.end());
+                    if (OpenFileDialog(m_window.m_hWnd, dialogTitleFilter, wpath)) {
+                        path.assign(wpath.begin(), wpath.end());
+                    }
+                }
+                ImGui::PopID();
+                };
+
+            pathField("Arquivo .skn", L"Arquivos SKN (*.skn)\0*.skn\0Todos os arquivos (*.*)\0*.*\0", m_riotSknPath);
+            pathField("Arquivo .skl", L"Arquivos SKL (*.skl)\0*.skl\0Todos os arquivos (*.*)\0*.*\0", m_riotSklPath);
+            pathField("Arquivo .anm", L"Arquivos ANM (*.anm)\0*.anm\0Todos os arquivos (*.*)\0*.*\0", m_riotAnmPath);
+
+            {
+                std::string texPathUtf8(m_riotTexPath.begin(), m_riotTexPath.end());
+                char buf[512];
+                strncpy_s(buf, texPathUtf8.c_str(), _TRUNCATE);
+                ImGui::InputText("Textura (.dds)", buf, sizeof(buf), ImGuiInputTextFlags_ReadOnly);
+                ImGui::SameLine();
+                if (ImGui::Button("...##tex")) {
+                    if (OpenFileDialog(m_window.m_hWnd, L"Texturas Riot (*.dds;*.tex)\0*.dds;*.tex\0Arquivos DDS (*.dds)\0*.dds\0Arquivos TEX (*.tex)\0*.tex\0Todos os arquivos (*.*)\0*.*\0", m_riotTexPath)) {
+                        // m_riotTexPath ja foi atualizado pelo dialogo
+                    }
+                }
+            }
+
+            ImGui::SliderFloat("Angulo (graus)", &m_riotAngleDeg, 0.0f, 360.0f);
+            ImGui::SliderFloat("Escala", &m_riotScale, 0.1f, 5.0f);
+
+            {
+                char nameBuf[128];
+                strncpy_s(nameBuf, m_riotName.c_str(), _TRUNCATE);
+                if (ImGui::InputText("Nome do Personagem", nameBuf, sizeof(nameBuf))) {
+                    m_riotName = nameBuf;
+                    UpdateRiotNameTexture();
+                }
+            }
+            ImGui::SliderFloat("Vida (HP %)", &m_riotHpRatio, 0.0f, 1.0f);
+
+            if (ImGui::Button("Aplicar", ImVec2(150.0f, 0.0f))) {
+                ApplyRiotChampion();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Remover", ImVec2(150.0f, 0.0f))) {
+                RemoveRiotChampion();
+            }
+
+            ImGui::Text("Status: %s", GraphicsRiot::IsRiotModelValid(m_riotTestHandle) ? "Ativo" : "Removido/Nao carregado");
+        }
+
+        if (ImGui::CollapsingHeader("Riot Champion 2 (LoL)")) {
+            ImGui::TextWrapped("Catalogo: lol_personagens.ini | Raiz dos assets: %s", m_riotAssetsRoot.c_str());
+
+            if (ImGui::Button("Recarregar catalogo (.ini)")) {
+                m_riot2ChampList.clear();
+                m_riot2SkinsByChamp.clear();
+                LoadRiotChampionsIni("lol_personagens.ini");
+                m_riot2ChampIdx = 0;
+                m_riot2SkinIdx = 0;
+                m_riot2AnimIdx = 0;
+                ResolveRiot2Selection();
+            }
+
+            if (m_riot2ChampList.empty()) {
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Nenhum campeao encontrado no catalogo.");
+            }
+            else {
+                bool selectionChanged = false;
+
+                if (ImGui::BeginCombo("Campeao", m_riot2ChampList[m_riot2ChampIdx].c_str())) {
+                    for (int n = 0; n < (int)m_riot2ChampList.size(); n++) {
+                        bool isSel = (m_riot2ChampIdx == n);
+                        if (ImGui::Selectable(m_riot2ChampList[n].c_str(), isSel)) {
+                            if (m_riot2ChampIdx != n) { m_riot2ChampIdx = n; m_riot2SkinIdx = 0; selectionChanged = true; }
+                        }
+                        if (isSel) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+
+                const std::string& currentChamp = m_riot2ChampList[m_riot2ChampIdx];
+                auto skinsIt = m_riot2SkinsByChamp.find(currentChamp);
+                if (skinsIt != m_riot2SkinsByChamp.end() && !skinsIt->second.empty()) {
+                    if (m_riot2SkinIdx < 0 || m_riot2SkinIdx >= (int)skinsIt->second.size()) m_riot2SkinIdx = 0;
+                    if (ImGui::BeginCombo("Skin", skinsIt->second[m_riot2SkinIdx].c_str())) {
+                        for (int n = 0; n < (int)skinsIt->second.size(); n++) {
+                            bool isSel = (m_riot2SkinIdx == n);
+                            if (ImGui::Selectable(skinsIt->second[n].c_str(), isSel)) {
+                                if (m_riot2SkinIdx != n) { m_riot2SkinIdx = n; selectionChanged = true; }
+                            }
+                            if (isSel) ImGui::SetItemDefaultFocus();
+                        }
+                        ImGui::EndCombo();
+                    }
+                }
+
+                if (selectionChanged) {
+                    m_riot2AnimIdx = 0;
+                    ResolveRiot2Selection();
+                }
+
+                ResolveRiot2Selection();
+
+                if (m_riot2ResolvedAnims.empty()) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Nenhuma animacao encontrada para esta selecao.");
+                }
+                else {
+                    if (m_riot2AnimIdx < 0 || m_riot2AnimIdx >= (int)m_riot2ResolvedAnims.size()) m_riot2AnimIdx = 0;
+                    if (ImGui::BeginCombo("Animacao", m_riot2ResolvedAnims[m_riot2AnimIdx].name.c_str())) {
+                        for (int n = 0; n < (int)m_riot2ResolvedAnims.size(); n++) {
+                            bool isSel = (m_riot2AnimIdx == n);
+                            if (ImGui::Selectable(m_riot2ResolvedAnims[n].name.c_str(), isSel)) {
+                                if (m_riot2AnimIdx != n) {
+                                    m_riot2AnimIdx = n;
+                                    if (m_riot2Enabled) ApplyRiot2Champion();
+                                }
+                            }
+                            if (isSel) ImGui::SetItemDefaultFocus();
+                        }
+                        ImGui::EndCombo();
+                    }
+                }
+
+                ImGui::Text("skn: %s", m_riot2ResolvedSkn.empty() ? "(nao encontrado)" : m_riot2ResolvedSkn.c_str());
+                ImGui::Text("skl: %s", m_riot2ResolvedSkl.empty() ? "(nao encontrado)" : m_riot2ResolvedSkl.c_str());
+                ImGui::Text("texturas encontradas: %d", (int)m_riot2ResolvedTexPaths.size());
+            }
+
+            ImGui::SliderFloat("Angulo (graus)##r2", &m_riot2AngleDeg, 0.0f, 360.0f);
+            ImGui::SliderFloat("Escala##r2", &m_riot2Scale, 0.1f, 5.0f);
+
+            {
+                char nameBuf2[128];
+                strncpy_s(nameBuf2, m_riot2Name.c_str(), _TRUNCATE);
+                if (ImGui::InputText("Nome do Personagem##r2", nameBuf2, sizeof(nameBuf2))) {
+                    m_riot2Name = nameBuf2;
+                    UpdateRiot2NameTexture();
+                }
+            }
+            ImGui::SliderFloat("Vida (HP %)##r2", &m_riot2HpRatio, 0.0f, 1.0f);
+
+            bool enabledToggle = m_riot2Enabled;
+            if (ImGui::Checkbox("Ativar Champion 2", &enabledToggle)) {
+                m_riot2Enabled = enabledToggle;
+                if (m_riot2Enabled) ApplyRiot2Champion();
+                else RemoveRiot2Champion();
+            }
+
+            ImGui::Text("Status: %s", GraphicsRiot::IsRiotModelValid(m_riot2Handle) ? "Ativo" : "Removido/Nao carregado");
+
+            // Lista de meshes (objetos) do modelo carregado, igual ao viewer de referencia em
+            // Rust: cada submesh (corpo, arma, yoyo, etc.) pode ser mostrado/ocultado e ter sua
+            // textura trocada por qualquer .tex/.dds encontrado na pasta da skin.
+            if (GraphicsRiot::IsRiotModelValid(m_riot2Handle)) {
+                int subMeshCount = GraphicsRiot::GetRiotSubMeshCount(m_riot2Handle);
+                if (subMeshCount > 0) {
+                    if ((int)m_riot2SubMeshTexChoice.size() != subMeshCount) m_riot2SubMeshTexChoice.resize(subMeshCount, -1);
+
+                    if (ImGui::CollapsingHeader("Meshes##r2", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        for (int i = 0; i < subMeshCount; ++i) {
+                            ImGui::PushID(i);
+                            const char* meshName = GraphicsRiot::GetRiotSubMeshName(m_riot2Handle, i);
+                            bool visible = GraphicsRiot::IsRiotSubMeshVisible(m_riot2Handle, i);
+                            if (ImGui::Checkbox(meshName && meshName[0] ? meshName : "(sem nome)", &visible)) {
+                                GraphicsRiot::SetRiotSubMeshVisible(m_riot2Handle, i, visible);
+                            }
+
+                            int& texChoice = m_riot2SubMeshTexChoice[i];
+                            std::string currentLabel = (texChoice >= 0 && texChoice < (int)m_riot2ResolvedTexPaths.size())
+                                ? m_riot2ResolvedTexPaths[texChoice] : std::string("(padrao)");
+                            if (ImGui::BeginCombo("Textura", currentLabel.c_str())) {
+                                bool isDefaultSel = (texChoice < 0);
+                                if (ImGui::Selectable("(padrao)", isDefaultSel)) {
+                                    texChoice = -1;
+                                    GraphicsRiot::SetRiotSubMeshTexture(m_riot2Handle, i, L"");
+                                }
+                                if (isDefaultSel) ImGui::SetItemDefaultFocus();
+
+                                for (int t = 0; t < (int)m_riot2ResolvedTexPaths.size(); ++t) {
+                                    bool isSel = (texChoice == t);
+                                    if (ImGui::Selectable(m_riot2ResolvedTexPaths[t].c_str(), isSel)) {
+                                        texChoice = t;
+                                        std::string fullUtf8 = m_riotAssetsRoot + m_riot2ResolvedTexPaths[t];
+                                        std::wstring full(fullUtf8.begin(), fullUtf8.end());
+                                        GraphicsRiot::SetRiotSubMeshTexture(m_riot2Handle, i, full.c_str());
+                                    }
+                                    if (isSel) ImGui::SetItemDefaultFocus();
+                                }
+                                ImGui::EndCombo();
+                            }
+                            ImGui::PopID();
+                        }
+                    }
+                }
+            }
+        }
+
 
         if (ImGui::CollapsingHeader("Personagem (Modelo Base)")) {
             const char* sexNames[] = { "Mulher Pequena", "Mulher Alta", "Homem Pequeno", "Homem Alto" };
@@ -2481,6 +3191,14 @@ public:
             m_window.m_width = currentWidth;
             m_window.m_height = currentHeight;
             m_renderer.Resize(currentWidth, currentHeight);
+            GraphicsRiot::Resize(currentWidth, currentHeight);
+        }
+
+        if (GraphicsRiot::IsRiotModelValid(m_riotTestHandle)) {
+            GraphicsRiot::UpdateRiotAnimation(m_riotTestHandle, deltaTime);
+        }
+        if (GraphicsRiot::IsRiotModelValid(m_riot2Handle)) {
+            GraphicsRiot::UpdateRiotAnimation(m_riot2Handle, deltaTime);
         }
 
         m_frameCount++; m_fpsTimer += deltaTime;
@@ -3563,6 +4281,73 @@ public:
             }
         }
 
+        // [TESTE] Desenha o campeao Riot de teste (controlado via ImGui) fixo no mapa 1002, coordenada (444,444).
+        if (GraphicsRiot::IsRiotModelValid(m_riotTestHandle)) {
+            auto [riotWorldX, riotWorldY] = coordSystem.MapToScreen(51.0f, 51.0f);
+            float riotDrawX = riotWorldX - m_cameraX;
+            float riotDrawY = riotWorldY - m_cameraY;
+            float riotZx = cx + (riotDrawX - cx) * m_zoom;
+            float riotZy = cy + (riotDrawY - cy) * m_zoom;
+            float riotAngleRad = m_riotAngleDeg * (3.14159265358979323846f / 180.0f);
+            GraphicsRiot::DrawRiotModel(m_riotTestHandle, riotZx, riotZy, riotAngleRad, m_zoom * m_riotScale, 1.0f);
+
+            // Barra de vida (azul, conforme solicitado) e nome do personagem acima da cabeca.
+            if (m_texHpBlack != -1 && m_texHpBlueRiot != -1) {
+                int riotHpBarW = 40; int riotHpBarH = 4;
+                int hpX = (int)riotZx - (int)((riotHpBarW * m_zoom) / 2);
+                int hpY = (int)riotZy - (int)(110 * m_zoom);
+
+                SetSpriteUV(0.0f, 0.0f, 1.0f, 1.0f);
+                m_renderer.DrawSprite(m_texHpBlack, hpX - 1, hpY - 1, (int)(riotHpBarW * m_zoom) + 2, (int)(riotHpBarH * m_zoom) + 2);
+
+                float riotHpRatio = m_riotHpRatio;
+                if (riotHpRatio < 0.0f) riotHpRatio = 0.0f;
+                if (riotHpRatio > 1.0f) riotHpRatio = 1.0f;
+                int riotHpW = (int)(riotHpBarW * riotHpRatio);
+                if (riotHpW > 0) m_renderer.DrawSprite(m_texHpBlueRiot, hpX, hpY, (int)(riotHpW * m_zoom), (int)(riotHpBarH * m_zoom));
+
+                if (m_riotNameTexId != -1) {
+                    int nameX = (int)riotZx - (m_riotNameW / 2);
+                    int nameY = hpY - m_riotNameH - 2;
+                    m_renderer.DrawSprite(m_riotNameTexId, nameX, nameY, m_riotNameW, m_riotNameH);
+                }
+            }
+        }
+
+        // [TESTE] Segundo campeao Riot (painel "Riot Champion 2 (LoL)"), carregado a partir do
+        // catalogo lol_personagens.ini. Desenhado ao lado do primeiro, no mesmo mapa de teste.
+        if (m_riot2Enabled && GraphicsRiot::IsRiotModelValid(m_riot2Handle)) {
+            auto [riot2WorldX, riot2WorldY] = coordSystem.MapToScreen(53.0f, 53.0f);
+            float riot2DrawX = riot2WorldX - m_cameraX;
+            float riot2DrawY = riot2WorldY - m_cameraY;
+            float riot2Zx = cx + (riot2DrawX - cx) * m_zoom;
+            float riot2Zy = cy + (riot2DrawY - cy) * m_zoom;
+            float riot2AngleRad = m_riot2AngleDeg * (3.14159265358979323846f / 180.0f);
+            GraphicsRiot::DrawRiotModel(m_riot2Handle, riot2Zx, riot2Zy, riot2AngleRad, m_zoom * m_riot2Scale, 1.0f);
+
+            if (m_texHpBlack != -1 && m_texHpBlueRiot != -1) {
+                int riot2HpBarW = 40; int riot2HpBarH = 4;
+                int hpX2 = (int)riot2Zx - (int)((riot2HpBarW * m_zoom) / 2);
+                int hpY2 = (int)riot2Zy - (int)(110 * m_zoom);
+
+                SetSpriteUV(0.0f, 0.0f, 1.0f, 1.0f);
+                m_renderer.DrawSprite(m_texHpBlack, hpX2 - 1, hpY2 - 1, (int)(riot2HpBarW * m_zoom) + 2, (int)(riot2HpBarH * m_zoom) + 2);
+
+                float riot2HpRatio = m_riot2HpRatio;
+                if (riot2HpRatio < 0.0f) riot2HpRatio = 0.0f;
+                if (riot2HpRatio > 1.0f) riot2HpRatio = 1.0f;
+                int riot2HpW = (int)(riot2HpBarW * riot2HpRatio);
+                if (riot2HpW > 0) m_renderer.DrawSprite(m_texHpBlueRiot, hpX2, hpY2, (int)(riot2HpW * m_zoom), (int)(riot2HpBarH * m_zoom));
+
+                if (m_riot2NameTexId != -1) {
+                    int nameX2 = (int)riot2Zx - (m_riot2NameW / 2);
+                    int nameY2 = hpY2 - m_riot2NameH - 2;
+                    m_renderer.DrawSprite(m_riot2NameTexId, nameX2, nameY2, m_riot2NameW, m_riot2NameH);
+                }
+            }
+        }
+
+
         struct RenderNode { float depth; int type; int index; };
         std::vector<RenderNode> renderQueue;
         renderQueue.push_back({ m_player.mapX + m_player.mapY, 0, 0 });
@@ -3575,7 +4360,7 @@ public:
             if (std::sqrt(ddx * ddx + ddy * ddy) > m_entityViewRange) continue;
             renderQueue.push_back({ m_monsters[i].mapX + m_monsters[i].mapY, 1, (int)i });
         }
-        for (size_t i = 0; i < m_sceneObjects.size(); i++) renderQueue.push_back({ m_sceneObjects[i].mapX + m_sceneObjects[i].mapY, 2, (int)i });
+        for (size_t i = 0; i < m_sceneObjects.size(); i++) renderQueue.push_back({ m_sceneObjects[i].depthKey, 2, (int)i });
         for (size_t i = 0; i < m_npcs.size(); i++) {
             float ddx = m_npcs[i].mapX - m_player.mapX;
             float ddy = m_npcs[i].mapY - m_player.mapY;
@@ -4162,14 +4947,16 @@ public:
         srand((unsigned int)time(NULL));
         MSG msg = {};
         auto lastTime = std::chrono::high_resolution_clock::now();
+        // [Config.ini] FPSLimit=0 significa sem limite (deixa o VSync, se ativado, regular o ritmo).
+        double minFrameSeconds = (m_configFpsLimit > 0) ? (1.0 / (double)m_configFpsLimit) : 0.0;
         while (msg.message != WM_QUIT) {
             if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
                 TranslateMessage(&msg); DispatchMessage(&msg);
             }
             else {
-                auto currentTime = std::chrono::high_resolution_clock::now();
-                float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
-                lastTime = currentTime;
+                auto frameStart = std::chrono::high_resolution_clock::now();
+                float deltaTime = std::chrono::duration<float>(frameStart - lastTime).count();
+                lastTime = frameStart;
                 if (deltaTime > 0.1f) deltaTime = 0.1f;
 
                 Update(deltaTime);
@@ -4188,7 +4975,19 @@ public:
                 ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
                 m_renderer.EndFrame();
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+                // [Config.ini - FPSLimit] Se o quadro terminou mais rapido que o intervalo alvo,
+                // dorme o restante do tempo para nao ultrapassar o limite configurado.
+                if (minFrameSeconds > 0.0) {
+                    double frameSeconds = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - frameStart).count();
+                    double remaining = minFrameSeconds - frameSeconds;
+                    if (remaining > 0.0) {
+                        std::this_thread::sleep_for(std::chrono::duration<double>(remaining));
+                    }
+                }
+                else {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
             }
         }
 
